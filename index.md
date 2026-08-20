@@ -45,10 +45,10 @@ We will cover the basics of Bayesian probability, Bayesian updating, causal infe
 
 ## Book
 
-- Required: McElreath. Statistical Rethinking. https://xcelab.net/rm/
+- Required: McElreath. Statistical Rethinking. [Book website](https://xcelab.net/rm/)
 	- McElreath has also posted lectures based on the book [here](https://www.youtube.com/watch?v=ztbYkBPDOgU&list=PLDcUM9US4XdPMtSV81e1R_4B6NugQBvTP), I highly recommend them
 
-- Recommended: Kurz. Statistical Rethinking with brms, ggplot2, and the tidyverse. https://bookdown.org/ajkurz/Statistical_Rethinking_recoded/index.html
+- Recommended: Kurz. [Statistical Rethinking with brms, ggplot2, and the tidyverse.](https://bookdown.org/ajkurz/Statistical_Rethinking_recoded/index.html)
 	- You are welcome to use McElreath's package for modeling and base R for visualization, but I will primarily present material using tidyverse R code and brms. Kurz has written a more or less complete translation of the examples in Rethinking using these packages.
 
 ## Communication
