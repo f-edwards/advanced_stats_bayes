@@ -136,39 +136,31 @@ Life happens. All students are granted two free extensions on homework, no quest
 **Week 1**
 
 Reading: 
-- Rethinking Chapter 1 
+- Rethinking Chapters 1 and 2
+- Lundberg, Johnson, and Stewart, 2021. "What is your Estimand" *American Sociological Review*. https://doi.org/10.1177/00031224211004187
 
 - 9/1: Introduction
 	- All models are wrong...
 	- Connecting scientific knowledge to models
 	- The importance of generative models
 	- Software install and setup
+	- Bayesian probability 1
 	 
-- HW 1 Due 9/6 
+- HW 1 Due 9/13 
 
-**Week 2**
-
-Reading: Rethinking Chapter 2
-
-- 9/8: Bayesian probability, 1
-	- Counting, permutations, combinations
-	- Probability as plausability, probability as limit under replication
-	- Introducing prior information
-	- Updating information with the posterior distribution
-
-- HW 2: Due 9/13 (Extension available for Rosh Hashanah)
+**Week 2** NO CLASS; Rutgers first week schedule is odd
 
 **Week 3**
 
 Reading: Rethinking Chapter 3
 
-- 9/15: Bayesian probability 2
+- 9/15: Bayesian probability, 2
 	- Linking models to Bayes theorem
 	- Review of random variables and densities
 	- Introduction to prior simulation
 	- Learning from the posterior distribution
 
-- HW 3: Due 9/20 
+- HW 2: Due 9/20 
 
 **Week 4**
 
@@ -180,7 +172,7 @@ Reading: Rethinking Chapter 4
 	- Priors and prior prediction
 	- Posterior inference
 
-- HW 4: Due 9/27 
+- HW 3: Due 9/27 
 
 **Week 5**
 
@@ -191,7 +183,7 @@ Reading: Rethinking Chapter 8
 	- Treatment heterogeneity
 	- Advanced visualization of posterior inferences with `tidybayes`
 
-- HW 5: Due 10/4
+- HW 4: Due 10/4
 
 **Week 6**
 
@@ -203,14 +195,13 @@ Reading: Rethinking Chapter 5
 	- Interpreting parameters under causal assumptions
 	- Interpreting parameters without causal assumptions
 
-- HW 6: Due 10/11
+- HW 5: Due 10/11
 
 **Week 7** 
 
 Reading: 
 
 - Rethinking Chapter 6
-- Lundberg, Johnson, and Stewart, 2021. "What is your Estimand" *American Sociological Review*. https://doi.org/10.1177/00031224211004187
 
 - 10/13: Structural causal models 2
 	- Connecting theory to a causal graph
@@ -219,7 +210,7 @@ Reading:
 	- Structures leading to confounding
 	- Backdoor paths, d-separation, and identfying adjustment sets
 
-- HW 7: Due 10/18 
+- HW 6: Due 10/18 
 
 **Week 8** 
 
@@ -232,7 +223,7 @@ Reading: Rethinking Chapter 7
 	- Choosing informative priors
 	- Model comparison with LOO and WAIC
 
-- HW 8: Due 10/25 
+- HW 7: Due 10/25 
 
 **Week 9** 
 
@@ -246,7 +237,7 @@ Reading: Rethinking Chapter 9
 	- Diagnostics for convergence
 	- Troubleshooting convergence problems
 
-- HW 9: Due 11/1 
+- HW 8: Due 11/1 
 
 **Week 10** 
 
@@ -257,7 +248,7 @@ Reading: Rethinking Chapter 10
 	- Taxonomy of common distributions used for GLMs
 	- Link functions, parameters and prior choince
 
-- HW 10: Due 11/8 
+- HW 9: Due 11/8 
 
 **Week 11** 
 
@@ -267,6 +258,8 @@ Reading: Rethinking Chapters 11 (12 optional)
 	- Bayesian logistic regression
 	- Bayesian Poisson models
 		- Other approaches for count data (negative binomial, zero-inflated)
+
+- HW10: Due 11/15
 
 **Week 12** 
 
@@ -280,7 +273,7 @@ Reading: Rethinking Chapter 13
 		- Cross-classification
 	- Formula syntax for multilevel models (lme4)
 
-- HW 12: Due 11/24 (extended for ASC)
+- HW 11: Due 11/24 (extended for ASC)
 
 **Week 13** 
 
@@ -303,7 +296,7 @@ Reading: Rethinking 14.3
 	- Estimation
 	- Other approaches to causal inference with observational data
 
-- HW 14: Due 12/6 
+- HW 13: Due 12/6 
 
 **Week 15**
 
@@ -315,4 +308,4 @@ Reading: Rethinking 14.5
 	- Estimation of approximate GP
 	- GP as spatial model
 
-- HW 15: Due 12/13
+- HW 14: Due 12/13
