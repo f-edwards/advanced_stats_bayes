@@ -435,9 +435,8 @@ Let's work through the likelihood of observing 1 for all possible values of $\th
 . . . 
 
 ```{r}
-# convert theta onto a probability scale 0, 1, 2, 3, 4 divided by 4
-probs <- 0:4 / 4
-dbinom(1, 1, probs)
+theta <- 0:4
+dhyper(x = 1, m = theta, n = 4-theta, k = 1)
 ```
 
 . . . 
@@ -451,7 +450,7 @@ Let's update our table by multiplying our *prior* by the *likelihood* for each p
 
 ```{r}
 post_tab <- prior_tab |> 
-  mutate(post1 = dbinom(1, 1, probs) * prior_exact)
+  mutate(post1 = dhyper(x = 1, m = theta, n = 4-theta, k = 1) * prior_exact)
 
 post_tab
 ```
@@ -500,7 +499,7 @@ OK, so what do we do, we've now observed "red", "red"; or 2.
 What's the probability of observing 2 for each value of $\theta$?
 
 ```{r}
-dbinom(2, 2, probs)
+dhyper(x = 2, m = theta, n = 4-theta, k = 2)
 ```
 
 ## Updating
@@ -509,7 +508,7 @@ So to obtain our new estimates of $P(\theta|2)$, we just multiply our prior by t
 
 ```{r}
 post_tab <- post_tab |> 
-  mutate(post2 = dbinom(2, 2, probs) * post1)
+  mutate(post2 = dhyper(x = 2, m = theta, n = 4-theta, k = 2) * post1)
 post_tab
 ```
 
@@ -552,7 +551,7 @@ ggplot(post_tab,
 bag[3]
 # update!
 post_tab <- post_tab |> 
-  mutate(post3 = dbinom(3, 3, probs) * post2)
+  mutate(post3 = dhyper(x = 3, m = theta, n = 4-theta, k = 3) * post2)
 post_tab
 ```
 
@@ -563,72 +562,40 @@ post_tab
 ggplot(post_tab,
        aes(y = prior_exact,
            x = red)) + 
-  geom_col() + 
-  labs(subtitle = "Prior")
+  geom_col() 
 ```
 
-## After one round
+## One draw: R
 
 ```{r}
 #| echo: false
 ggplot(post_tab,
        aes(y = post1,
            x = red)) + 
-  geom_col() + 
-  labs(subtitle = "Prior")
+  geom_col() 
 ```
 
-## After two rounds
+## Two draws: RR
 
 ```{r}
 #| echo: false
 ggplot(post_tab,
        aes(y = post2,
            x = red)) + 
-  geom_col() + 
-  labs(subtitle = "Prior")
+  geom_col() 
 ```
 
-## After three rounds
+## Three draws: RRR
 
 ```{r}
 #| echo: false
 ggplot(post_tab,
        aes(y = post3,
            x = red)) + 
-  geom_col() + 
-  labs(subtitle = "Prior")
+  geom_col()
 ```
 
 # So what can we say about theta?
-
-## Frequentist, just the likelihood
-
-```{r}
-#| echo: false
-p1 <- ggplot(post_tab,
-       aes(y = prior_exact,
-           x = red)) + 
-         geom_col() + 
-  labs(subtitle = "Prior")
-p2 <- ggplot(post_tab,
-       aes(y = post1,
-           x = red)) + 
-         geom_col() + 
-  labs(subtitle = "After 1 draw (red)")
-p3 <- ggplot(post_tab,
-       aes(y = post2,
-           x = red)) + 
-         geom_col()+ 
-  labs(subtitle = "After 2 draws (red, red)")
-p4 <- ggplot(post_tab,
-       aes(y = post3,
-           x = red)) + 
-         geom_col()+ 
-  labs(subtitle = "After 3 draws (red, red, red)")
-
-gridExtra::grid.arrange(p1, p2, p3, p4, nrow = 2)
-```
 
 ## Bayesian, with prior information
 
@@ -638,23 +605,51 @@ p1 <- ggplot(post_tab,
        aes(y = prior_exact,
            x = red)) + 
          geom_col() + 
-  labs(subtitle = "Prior")
+  labs(subtitle = "Prior", y = "posterior density", x = "")
 p2 <- ggplot(post_tab,
-       aes(y = dbinom(1, 1, probs),
+       aes(y = post1,
            x = red)) + 
          geom_col() + 
-  labs(subtitle = "After 1 draw (red)")
+  labs(subtitle = "After 1 draw (red)",y = "", x = "")
 p3 <- ggplot(post_tab,
-       aes(y = dbinom(2, 2, probs),
+       aes(y = post2,
            x = red)) + 
          geom_col()+ 
-  labs(subtitle = "After 2 draws (red, red)")
+  labs(subtitle = "After 2 draws (red, red)",y = "posterior density", x = "number of reds (theta)")
+p4 <- ggplot(post_tab,
+       aes(y = post3,
+           x = red)) + 
+         geom_col()+ 
+  labs(subtitle = "After 3 draws (red, red, red)",y = "", x = "number of reds (theta)")
+
+gridExtra::grid.arrange(p1, p2, p3, p4, nrow = 2)
+```
+
+## Frequentist, just the likelihood
+
+```{r}
+#| echo: false
+p1 <- ggplot(post_tab,
+       aes(y = prior_exact,
+           x = red)) + 
+         geom_col() + 
+  labs(subtitle = "Prior", y = "probability", x = "")
+p2 <- ggplot(post_tab,
+       aes(y = dhyper(x = 1, m = theta, n = 4-theta, k = 1),
+           x = red)) + 
+         geom_col() + 
+  labs(subtitle = "After 1 draw (red)", x = "", y = "")
+p3 <- ggplot(post_tab,
+       aes(y = dhyper(x = 2, m = theta, n = 4-theta, k = 2),
+           x = red)) + 
+         geom_col()+ 
+  labs(subtitle = "After 2 draws (red, red)",y = "probability", x = "number of reds (theta)")
 
 p4 <- ggplot(post_tab,
-       aes(y = dbinom(3, 3, probs),
+       aes(y = dhyper(x = 3, m = theta, n = 4-theta, k = 3),
            x = red)) + 
          geom_col()+ 
-  labs(subtitle = "After 3 draws (red, red, red)")
+  labs(subtitle = "After 3 draws (red, red, red)", x = "number of reds (theta)", y = "")
 
 gridExtra::grid.arrange(p1, p2, p3, p4, nrow = 2)
 ```
