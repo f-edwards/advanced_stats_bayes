@@ -1,0 +1,523 @@
+---
+title: "Posterior Sampling"
+author: "Frank Edwards"
+format:
+  revealjs: 
+    theme: dark
+    embed-resources: true
+    incremental: true
+execute: 
+  echo: true
+---
+
+```{r setup, include=FALSE}
+library(rethinking)
+library(gridExtra)
+library(tidyverse)
+
+theme_set(theme_bw())
+```
+
+## Sampling from the posterior
+
+- We use Bayesian methods to *approximate* the posterior distribution
+- We can then sample parameters from the estimated posterior to learn about parameters or to simulate predictions
+- We can plot densities, directly sample *credible intervals*, compare differences in means, all without relying on a theoretical *sampling distribution*, like we do with frequentist methods 
+
+## Summarizing distributions
+
+Let's say we want to know how much probability mass there is within $\pm 1.4$ standard deviations of 0 for $x \sim N(0,1)$.
+
+The Normal probability density function (PDF) is: 
+
+$$\frac{1}{\sigma\sqrt{2\pi}} e^{-\frac{1}{2}\left(\frac{x - \mu}{\sigma}\right)^2}$$ 
+
+## Integrals are hard
+
+To answer our question exactly, we can take the integral of the PDF from $-1.4$ to $1.4$:
+
+$$\int_{-1.4}^{1.4} \frac{1}{\sigma\sqrt{2\pi}} e^{-\frac{1}{2}\left(\frac{x - \mu}{\sigma}\right)^2} dx$$ 
+
+- I don't want to do this, and I suspect neither do you. 
+
+- *Note:* We can just use dnorm() here, but most of our posteriors won't be so simple to work with.
+
+## But simulation is easy!
+
+1. Sample from the target distribution
+
+::: {.fragment}
+```{r}
+n_samples<-10000
+samples<-rnorm(n = n_samples, mean = 0, sd = 1)
+```
+:::
+
+2. Summarize our quantity of interest
+
+::: {.fragment}
+```{r, fig.align="center", fig.height = 2}
+ggplot(data.frame(samples), aes(x=samples)) + geom_histogram()
+```
+:::
+
+## Using samples to calculate quantities of interest
+
+- What are the mean and SD of this paramter? 
+
+::: {.fragment}
+```{r size = "tiny"}
+mean(samples)
+sd(samples)
+```
+:::
+
+- How much mass is within $0 \pm 1.4 \sigma$?
+
+::: {.fragment}
+```{r size = "tiny"}
+samples_df<-data.frame(samples)
+samples_df  |>  
+  filter(samples>=-1.4 & samples<=1.4) |> 
+  summarise(mass = n()/n_samples)
+```
+::: 
+
+## Estimation strategies
+
+- For products of probability distributions (*ie* $prior \times likelihood$); there usually aren't exact solutions. 
+- We'll rely on 3 algorithms to *approximate* posterior distributions to condition the prior on the likelihood of the data. 
+
+## Our approximation engines
+
+- Grid approximation (check!)
+- Quadratic approximation (today!)
+- Markov Chain Monte Carlo (MCMC) (week 9 on, with some in week 5/6)
+
+## Grid approximation algorithm
+
+1. Define the grid 
+2. Compute the prior for each parameter value on the grid
+3. Compute the likelihood for each parameter value on the grid
+4. Multiply the prior by the likelihood
+5. Divide by the sum of all values
+
+## Grid approximation in R
+
+We draw (with replacement) six green marbles from a bag that we know has red and green marbles; we want to know the proportion green ($p$) in the bag.
+
+```{r}
+### size of grid
+length <- 50
+### make our grid
+grid<-seq(from = 0, to = 1, length.out = length)
+### uniform (flat) prior
+prior  <-  rep(1, length)
+### likelihood, observe 6 of 9 green, how likely under each value of p?
+likelihood  <-  dbinom(6, size = 9, prob = grid)
+### update the posterior
+posterior <- prior * likelihood / sum(prior * likelihood)
+```
+
+## Sampling from a grid-estimated posterior
+
+- We've estimated the posterior probability density for each value on the grid 
+- We can draw random samples from this distribution. 
+- With a large enough number of samples, we can closely approximate the distribution 
+- Using these samples, we can learn alot about the parameter of interest
+
+## Draw samples of proportion water from grid estimated posterior
+
+```{r tidy = F}
+post_samples<-sample(
+  grid,
+  prob = posterior,
+  size = 10,
+  replace = T)
+
+round(post_samples,2)
+```
+
+## Our estimate of *p*, 10 posterior draws
+
+```{r}
+plot_dat<-data.frame(
+  post_samples = sample(
+      grid,
+      prob = posterior,
+      size = 10,
+      replace = T)) 
+
+ggplot(plot_dat, 
+       aes(x = post_samples)) + 
+  geom_density() +  
+  coord_cartesian(xlim=c(0,1))
+```
+
+## 100 posterior draws
+
+```{r}
+plot_dat<-data.frame(
+  post_samples = sample(
+      grid,
+      prob = posterior,
+      size = 100,
+      replace = T)) 
+
+ggplot(plot_dat, 
+       aes(x = post_samples)) + 
+  geom_density() +  
+  coord_cartesian(xlim=c(0,1))
+```
+
+## 1000 draws
+
+```{r}
+plot_dat<-data.frame(
+  post_samples = sample(
+      grid,
+      prob = posterior,
+      size = 1000,
+      replace = T)) 
+
+ggplot(plot_dat, 
+       aes(x = post_samples)) + 
+  geom_density() +  
+  coord_cartesian(xlim=c(0,1))
+```
+
+## 10000 draws
+
+```{r}
+plot_dat<-data.frame(
+  post_samples = sample(
+      grid,
+      prob = posterior,
+      size = 10000,
+      replace = T)) 
+
+ggplot(plot_dat, 
+       aes(x = post_samples)) + 
+  geom_density() +  
+  coord_cartesian(xlim=c(0,1))
+```
+
+## 100000 draws
+
+```{r}
+plot_dat<-data.frame(
+  post_samples = sample(
+      grid,
+      prob = posterior,
+      size = 100000,
+      replace = T)) 
+
+ggplot(plot_dat, 
+       aes(x = post_samples)) + 
+  geom_density() +  
+  coord_cartesian(xlim=c(0,1))
+```
+
+## So what now?
+
+What questions do we typically ask about a parameter? 
+
+- What is the mean / expected value of the parameter?
+- How certain are we about the location of the parameter?
+
+## Using posterior samples
+
+- What is $E(p)$ 
+
+::: {.fragment}
+```{r size = "scriptsize"}
+mean(plot_dat$post_samples)
+```
+:::
+
+- How certain are we about the location of $p$? Where is 92 percent of the posterior probability? 
+
+::: {.fragment}
+```{r size = "scriptsize"}
+quantile(plot_dat$post_samples, c(0.04, 0.96))
+```
+:::
+
+- Conditional on the data and our assumptions (priors, likelihood), we can describe the posterior *without* appealing to theoretical replications (!!!)
+
+## Exact binomial likelihood
+
+```{r echo = F, message = F, warning = F}
+counts<-1:9
+plot(counts/9, dbinom(counts, 9, 6/9), type = "h", 
+     main = "Binomial(9, 2/3), exact")
+```
+
+## Posterior approximation
+
+```{r echo = F, message = F, warning = F}
+plot(density(plot_dat$post_samples), 
+     main = "Binomial(9, 2/3), approximated")
+```
+
+## Quadratic approximation
+
+1. Assume our posterior is approximately Normal (often reasonable)
+2. Find the mode 
+2. Estimate curvature of the log posterior with a parabola
+3. Use the resulting  Gaussian distribution for inference
+4. With enough data: $\textsf{quap} \rightarrow \textsf{MLE}$
+
+## Using quadratic approximation in R
+
+```{r}
+### First, define the data as a list() object
+### let's treat 1 as green, 0 as red
+dat<-list(G = 6, R = 3)
+```
+
+## Using quadratic approximation in R
+
+```{r}
+## Specify the prior and likelihood in alist() object
+formula_list<-alist(
+  # likelihood
+  G ~ dbinom(R+G, p),
+  # prior
+  p ~ dunif(0,1)
+)
+```
+
+## Using quadratic approximation in R
+
+```{r}
+model1<-quap(
+  formula_list,
+  data = dat
+)
+```
+
+## Using quadratic approximation in R
+
+```{r}
+# summarize the distribution using summary() or precis()
+summary(model1)
+```
+
+## Extract posterior samples
+
+```{r}
+post_samples<-extract.samples(model1, n=10000)
+```
+
+## Visualize
+
+```{r}
+p1<-ggplot(post_samples, aes(y = p, x = 1:nrow(post_samples))) + 
+  geom_point(alpha = 0.1)
+p2<-ggplot(post_samples, aes(x = p)) + 
+  geom_density()
+### grid.arrange() lets us put more than one plot in a window
+grid.arrange(p1, p2, ncol = 2)
+```
+
+## Using this object
+
+::: {.fragment}
+```{r}
+### peek inside
+head(post_samples)
+```
+:::
+
+## Learning from the posterior
+
+Questions we can ask with posterior samples:
+
+- How much posterior probability lies (below/above/between) some parameter value(s)?
+- Which parameter values mark the (lower/upper) n% of the posterior probability?
+- Which parameter value has the highest posterior probability?
+
+## Probability above/below
+
+- We can simply filter the samples, then divide by the size of the posterior sample.
+
+- **Q:** What is the posterior probability that the bag is less than 60 percent green, conditional on our model and the data (6G, 3R)? 
+
+::: {.fragment}
+```{r}
+post_samples |> 
+  filter(p<0.6) |> 
+  summarise(p = n()/nrow(post_samples))
+```
+:::
+
+## Probability above/below
+
+- **Q:** What is the posterior probability that there is between 60 percent and 90 percent green marbles in the bag, conditional on our model and the data?
+
+::: {.fragment}
+```{r}
+post_samples |> 
+  filter(p>=0.6 & p<=0.9) |> 
+  summarise(p = n()/nrow(post_samples))
+```
+:::
+
+## Confidence (posterior) intervals
+
+- **Q:** Where does 90% of the posterior probability mass lie? 
+
+::: {.fragment}
+```{r}
+quantile(post_samples$p, c(0.05, 0.95))
+quantile(post_samples$p, 0.9)
+```
+:::
+
+- Thoughts on the differences between these two intervals?
+
+## Posterior intervals
+
+```{r echo = F}
+ggplot(post_samples,
+       aes( x = p)) + 
+  geom_density() + 
+  geom_vline(xintercept = quantile(post_samples$p, 0.9)) + 
+  geom_vline(xintercept = quantile(post_samples$p, 0.05), linetype ="dashed") +
+  geom_vline(xintercept = quantile(post_samples$p, 0.95), linetype ="dashed") + 
+  labs(subtitle = "Solid line indicates lower 90 percent CI \nDashed indicates CI centered at median")
+```
+
+## Confidence intervals versus Bayesian intervals
+
+- Confidence interval: If we replicated the experiment many times, the true value would lie within this interval 90 percent of the time. 
+- Posterior interval: Conditional on our data and model (priors, likelihood), 90 percent of compatible parameter values lie within this range. 
+
+## Point estimates
+
+- Which parameter value has the highest posterior probability? 
+
+```{r}
+chainmode(post_samples$p, adj = 0.01)
+```
+
+- This is the maximum a posteriori (MAP) estimate. 
+
+- If our posterior is approximately symmetric, the MAP and median will be similar
+
+::: {.fragment}
+```{r}
+median(post_samples$p)
+```
+:::
+
+## Simulating prediction
+
+- We've learned how to describe the parameter *p* with posterior samples. 
+
+- What would happen if we re-ran the experiment? 
+
+- **Posterior predictive simulation** incorporates updated information on the parameter into predictions of new values of our observed outcome variable (W, L) 
+
+## Posterior prediction algorithm
+
+1. Sample from the posterior distribution
+2. Use these sampled posterior parameter values to sample new values from the likelihood
+
+## Posterior prediction in R
+
+```{r}
+# Draw samples of posterior p from model1
+# Truncate impossible p >1 (Gaussian has long tails)
+p_samples<-extract.samples(model1) |>  
+  mutate(p = ifelse(p>1, 1, p))
+## sample from likelihood
+RG_predictions<-rbinom(1e4, size = 9, prob = p_samples$p) 
+## distribution of predictions of G under our posterior
+table(RG_predictions)
+```
+
+## Visualize the predictions
+
+```{r}
+ggplot(data.frame(RG_predictions), 
+       aes(x = RG_predictions)) + 
+  geom_histogram() + 
+  scale_x_continuous(breaks=0:9) +
+  labs(title = "Posterior predictions of W")
+```
+
+## The impact of uncertainty in p on predictions
+
+```{r size = "tiny", fig.height = 3}
+ggplot(p_samples, aes(x = p)) + 
+  geom_histogram()
+```
+
+## p = posterior median
+
+```{r size = "tiny", fig.height = 3}
+## set p at the median of the posterior 
+samples<-rbinom(1e4, 9, median(p_samples$p))
+ggplot(data.frame(samples), aes(x = samples)) + 
+  geom_histogram()
+```
+
+## p = posterior 5th percentile
+
+```{r size = "tiny", fig.height = 3}
+## set p at the 5th percentile of the posterior 
+samples<-rbinom(1e4, 9, quantile(p_samples$p, 0.05))
+ggplot(data.frame(samples), aes(x = samples)) + 
+  geom_histogram()
+```
+
+## p = posterior 95th percentile
+
+```{r size = "tiny", fig.height = 3}
+## set p at the 95th percentile of the posterior 
+samples<-rbinom(1e4, 9, quantile(p_samples$p, 0.95))
+ggplot(data.frame(samples), aes(x = samples)) + 
+  geom_histogram()
+```
+
+## Propagating ALL uncertainty
+
+**Posterior predictive distributions propagate uncertainty in p into predictions**
+
+```{r size = "tiny", fig.height = 3}
+ggplot(data.frame(RG_predictions), 
+       aes(x = RG_predictions)) + 
+  geom_histogram() + 
+  scale_x_continuous(breaks=0:9) +
+  labs(title = "Posterior predictions of G")
+```
+
+## Prior prediction
+
+We can also use simulation to better understand and select priors 
+
+```{r size = "tiny"}
+### our prior
+formula_list
+
+prior_samples<-runif(1e4, 0, 1)
+
+head(prior_samples)
+```
+
+## Visualize the prior predictions
+
+```{r size = "tiny", fig.height = 3}
+ggplot(data.frame(prior_samples), 
+       aes(x = prior_samples)) + 
+  coord_cartesian(xlim = c(0, 1)) +
+  geom_histogram(bins = 20) 
+```
+
+## Summary
+
+- Simulation is a fundamental tool in Bayesian data analysis
+- Visualize samples from the prior, posterior, and posterior predictive distributions
+- Posterior prediction far more informative than point estimate / std. error approach
