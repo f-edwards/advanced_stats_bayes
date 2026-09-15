@@ -1,0 +1,13 @@
+---
+title: "Advanced Stats. HW2"
+author: "Your Name Here!"
+format: 
+  html:
+      embed-resources: true
+---
+
+Complete the following exercises in Rethinking
+
+3E1-3M5
+
+Provide your homework as a rendered quarto document with all code included.

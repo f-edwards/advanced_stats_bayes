@@ -1,0 +1,150 @@
+---
+title: "Advanced Stats. HW1"
+author: "Frank's solutions"
+format: 
+  html:
+      embed-resources: true
+---
+
+```{r include = F}
+library(tidyverse)
+library(rethinking)
+```
+
+
+Complete the following exercises in Rethinking
+
+2E1 - 2E4; 2M1, 2M2
+
+## 2E1
+
+Probability of rain on Monday is $Pr(rain|Monday)$, so option 2, and by the definition of conditional probability, 4 works too
+
+## 2E2
+
+$Pr(Monday|Rain)$ means conditional on knowing it is Monday, how likely is it to rain?, so option 3
+
+## 2E3
+
+It's (1)
+
+## 2E4
+
+This is tricky. We can take it as an information definition; I think that the chance I will observe W is about 7 in 10. Or we can take it as an empirical proportion: I know the globe is about 70% water, thus my best guess for W is that exact proportion. But the probability itself isn't a concrete thing, it's a feature of either our limited information, or an extension of our knowledge of the proportion.
+
+## 2M1
+
+### 1) WWW
+
+```{r}
+# define prior for n=3, flat
+prior <- rep(1, 3)
+# define the grid of possible values of p for n=3
+p_grid <- seq(0, 1, length.out = 3)
+# compute the binomial likelihood for n = 3, WWW (so x = 3)
+likelihood <- dbinom(3, 3, p_grid)
+# compute posterior
+posterior <- likelihood*prior / sum(likelihood*prior)
+# format for output
+tab_out <- data.frame(p_grid =p_grid, prior = prior, likelihood = likelihood, posterior = posterior)
+knitr::kable(tab_out)
+```
+
+Note the difference between the posterior and the likelihood. The prior pulls us away from all water, even though that's what we observed.
+
+### 2) WWWL
+
+```{r}
+# define prior for n=4, flat
+prior <- rep(1, 4)
+# define the grid of possible values of p for n=4
+p_grid <- seq(0, 1, length.out = 4)
+# compute the binomial likelihood for n = 4, WWW (so x = 3)
+likelihood <- dbinom(3, 4, p_grid)
+# compute posterior
+posterior <- likelihood*prior / sum(likelihood*prior)
+# format for output
+tab_out <- data.frame(p_grid =p_grid, prior = prior, likelihood = likelihood, posterior = posterior)
+knitr::kable(tab_out)
+```
+
+Here the likelihood and prior have a pretty similar shape. We rule out 0 and 1 logically, then weight 3 more than 2. 
+
+### 2) LWWLWWW
+
+```{r}
+# define prior for n=7, flat
+prior <- rep(1, 7)
+# define the grid of possible values of p for n=7
+p_grid <- seq(0, 1, length.out = 7)
+# compute the binomial likelihood for n = 7, so x = 5
+likelihood <- dbinom(5, 7, p_grid)
+# compute posterior
+posterior <- likelihood*prior / sum(likelihood*prior)
+# format for output
+tab_out <- data.frame(p_grid =p_grid, prior = prior, likelihood = likelihood, posterior = posterior)
+knitr::kable(tab_out)
+```
+
+Getting closer to convergence between the likelihood and the prior. More data typically will do this. As we add more observations, the prior becomes less influential. The shapes of the two look pretty similar at this point.
+
+## 2M2
+
+Let's try a different prior. 0 when $p<0.5$, constant otherwise
+
+For WWW
+
+```{r}
+# define the grid
+m3 <- data.frame(p_grid = p_grid <- seq(0, 1, length.out = 3))
+# define the prior
+m3 <- m3 |> 
+  mutate(prior = ifelse(p_grid<0.5, 0, 1))
+# compute the likelihood
+m3 <- m3 |> 
+  mutate(likelihood = dbinom(3, 3, p_grid))
+# compute posterior 
+m3 <- m3 |> 
+  mutate(posterior = prior * likelihood / sum(prior*likelihood))
+knitr::kable(m3)
+```
+
+Very similar to above on this prior, we ruled out 0 either way. A bit more weight on 1 here than above, but it is a minimal difference.
+
+For WWWL
+
+```{r}
+# define the grid
+m4 <- data.frame(p_grid = p_grid <- seq(0, 1, length.out = 4))
+# define the prior
+m4 <- m4 |> 
+  mutate(prior = ifelse(p_grid<0.5, 0, 1))
+# compute the likelihood
+m4 <- m4 |> 
+  mutate(likelihood = dbinom(3, 4, p_grid))
+# compute posterior 
+m4 <- m4 |> 
+  mutate(posterior = prior * likelihood / sum(prior*likelihood))
+knitr::kable(m4)
+```
+
+Completely ruled out $\frac{1}{3}$ even though the likelihood doesn't rule it out. The prior is influential here! We land on only one possible value.
+
+For LWWLWWW
+
+```{r}
+# define the grid
+m7 <- data.frame(p_grid = p_grid <- seq(0, 1, length.out = 7))
+# define the prior
+m7 <- m7 |> 
+  mutate(prior = ifelse(p_grid<0.5, 0, 1))
+# compute the likelihood
+m7 <- m7 |> 
+  mutate(likelihood = dbinom(5, 7, p_grid))
+# compute posterior 
+m7 <- m7 |> 
+  mutate(posterior = prior * likelihood / sum(prior*likelihood))
+knitr::kable(m7)
+```
+
+Similar, we rule out three low values, so more weight is shifted between 0.5 and 1. We also logically rule out 1 because we observe L. 
