@@ -1,0 +1,20 @@
+---
+title: "Advanced Stats. HW3"
+author: "Your Name Here!"
+format: pdf
+---
+
+Complete the following exercises in Rethinking
+
+3H1-3H5
+
+Provide your homework as a rendered quarto document with all code included.
+
+The homework uses this data
+```{r}
+library(rethinking)
+data(homeworkch3)
+# put it in a data frame for convenience
+dat <- data.frame(birth1 = birth1, birth2 = birth2)
+```
+
