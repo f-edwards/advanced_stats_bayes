@@ -1,0 +1,542 @@
+---
+title: "3. Posterior predictive and prior predictive sampling"
+author: "Frank Edwards"
+format:
+  revealjs: 
+    theme: dark
+    embed-resources: true
+    incremental: true
+execute: 
+  echo: true
+---
+
+```{r setup, include=FALSE}
+library(rethinking)
+library(gridExtra)
+library(tidyverse)
+
+theme_set(theme_bw())
+```
+
+## Sampling from the posterior
+
+- We use Bayesian methods to *approximate* the posterior distribution
+- We can then sample parameters from the estimated posterior to learn about parameters or to simulate predictions
+- We can plot densities, directly sample *credible intervals*, compare differences in means, all without relying on a theoretical *sampling distribution*, like we do with frequentist methods 
+- We can even simulate *new* data from the posterior
+
+## Quadratic approximation
+
+1. Assume our posterior is approximately Normal (often reasonable)
+2. Find the mode 
+2. Estimate curvature of the log posterior with a parabola
+3. Use the resulting  Gaussian distribution for inference
+4. With enough data: $\textsf{quap} \rightarrow \textsf{MLE}$
+
+## Quadrating approximation logic
+
+```{r echo = F}
+normal_plot <- data.frame(x = seq(-2, 2, 0.001))
+p1 <- ggplot(normal_plot, aes(x = x, y = dnorm(x))) + geom_line() +labs(subtitle = "N(0,1)")
+p2 <- ggplot(normal_plot, aes(x = x, y = log(dnorm(x)))) + geom_line() + labs(subtitle = "log(N(0,1))")
+gridExtra::grid.arrange(p1, p2)
+```
+
+## Using quadratic approximation in R
+
+9 draws from the bag of red and green marbles, we observe 6 green. 
+
+```{r}
+### First, define the data as a list() object
+### let's treat 1 as green, 0 as red
+dat<-list(G = 6, R = 3)
+```
+
+## Using quadratic approximation in R
+
+```{r}
+## Specify the prior and likelihood in alist() object
+formula_list<-alist(
+  # likelihood
+  G ~ dbinom(R+G, p),
+  # prior
+  p ~ dunif(0,1)
+)
+```
+
+## Using quadratic approximation in R
+
+```{r}
+model1<-quap(
+  formula_list,
+  data = dat
+)
+```
+
+## Using quadratic approximation in R
+
+```{r}
+# summarize the distribution using summary() or precis()
+summary(model1)
+```
+
+## Extract posterior samples
+
+```{r}
+post_samples<-extract.samples(model1, n=10000)
+```
+
+## Visualize
+
+```{r}
+p1<-ggplot(post_samples, aes(y = p, x = 1:nrow(post_samples))) + 
+  geom_point(alpha = 0.1)
+p2<-ggplot(post_samples, aes(x = p)) + 
+  geom_density()
+### grid.arrange() lets us put more than one plot in a window
+grid.arrange(p1, p2, ncol = 2)
+```
+
+# Posterior prediction
+
+## Simulating prediction
+
+- We've learned how to describe the parameter *p* with posterior samples. 
+
+- What would happen if we re-ran the experiment? 
+
+- **Posterior predictive simulation** incorporates updated information on the parameter into predictions of new values of our observed outcome variable (W, L) 
+
+## Posterior prediction algorithm
+
+1. Sample from the posterior distribution
+2. Use these sampled posterior parameter values to sample new values from the likelihood
+
+## Simulating from one p
+
+```{r}
+t <- extract.samples(model1, n=2)
+t
+```
+
+. . .
+
+```{r}
+predicted_p1 <- rbinom(n=1, size = 9, prob = t$p[1])
+predicted_p1
+```
+
+## The distribution of predictions
+
+```{r}
+predicted_p1 <- rbinom(n=10000, size = 9, prob = t$p[1])
+hist(predicted_p1, breaks = 0:9, main = t$p[1])
+```
+
+## Simulating from a different value of p
+
+```{r}
+predicted_p2 <- rbinom(n=10000, size = 9, prob = t$p[2])
+hist(predicted_p2, breaks = 0:9, main = t$p[2])
+```
+
+## Averaging uncertainty
+
+```{r}
+predicted_joint <- c(predicted_p1, predicted_p2)
+hist(predicted_joint, breaks = 0:9, main = t)
+```
+
+## Simulating over both values of p
+
+```{r}
+predicted_p_joint <- rbinom(n=20000, size = 9, prob = t$p)
+hist(predicted_p_joint, breaks = 0:9, main = t)
+```
+
+## p = posterior median
+
+```{r }
+p_samples <- extract.samples(model1, n = 10000)
+## set p at the median of the posterior 
+samples<-rbinom(1e4, 9, median(p_samples$p))
+hist(samples, breaks = 0:9, main = median(p_samples$p))
+```
+
+## p = posterior 5th percentile
+
+```{r}
+## set p at the 5th percentile of the posterior 
+samples<-rbinom(1e4, 9, quantile(p_samples$p, 0.05))
+hist(samples, breaks = 0:9, main = quantile(p_samples$p, 0.05))
+```
+
+## p = posterior 95th percentile
+
+```{r}
+## set p at the 95th percentile of the posterior 
+samples<-rbinom(1e4, 9, quantile(p_samples$p, 0.95))
+hist(samples, breaks = 0:9, main = quantile(p_samples$p, 0.95))
+```
+
+## Averaging over uncertainty in p
+
+```{r}
+p_samples <- extract.samples(model1, n = 10000)
+hist(p_samples$p)
+```
+
+## Oops, impossible values!
+
+```{r}
+# correct for impossible values
+p_samples <- p_samples |> 
+  mutate(p = case_when(
+  p > 1 ~ 1,
+  p < 0 ~ 0,
+  .default = p
+))
+
+ggplot(p_samples, aes(x=p)) + geom_histogram()
+```
+
+## Generate a prediction of the data for each p
+
+```{r}
+RG_predictions<-rbinom(1e4, size = 9, prob = p_samples$p) 
+## distribution of predictions of G under our posterior
+head(p_samples)
+head(RG_predictions)
+```
+
+## Visualize the predictions
+
+```{r}
+ggplot(data.frame(RG_predictions), 
+       aes(x = RG_predictions)) + 
+  geom_histogram() + 
+  scale_x_continuous(breaks=0:9) +
+  labs(title = "Posterior predictions of G")
+```
+
+## Two kinds of uncertainty
+
+```{r echo = F}
+p1 <- ggplot(p_samples, aes(x = p)) + 
+  geom_histogram() + 
+  labs(title = "Uncertainty in p")
+p2 <- ggplot(data.frame(RG_predictions), 
+       aes(x = RG_predictions)) + 
+  geom_histogram() + 
+  scale_x_continuous(breaks=0:9) +
+  labs(title = "Uncertainty in G")
+grid.arrange(p1, p2, nrow = 1)
+```
+
+## Posterior predictions propagate ALL modeled uncertainty
+
+```{r size = "tiny", fig.height = 3}
+ggplot(data.frame(RG_predictions), 
+       aes(x = RG_predictions)) + 
+  geom_histogram() + 
+  scale_x_continuous(breaks=0:9) +
+  labs(title = "Posterior predictions of G")
+```
+
+# Prior Prediction
+
+## Prior prediction
+
+We can also use simulation to better understand and select priors 
+
+```{r}
+### our prior
+formula_list
+
+prior_samples<-runif(1e4, 0, 1)
+
+head(prior_samples)
+```
+
+## Visualize the prior samples
+
+```{r size = "tiny", fig.height = 3}
+ggplot(data.frame(prior_samples), 
+       aes(x = prior_samples)) + 
+  coord_cartesian(xlim = c(0, 1)) +
+  geom_histogram(bins = 20) 
+```
+
+## Prior Predictive sampling
+
+We can simulate data from this prior
+
+```{r}
+prior_pred <- data.frame(p = prior_samples) |> 
+  mutate(G = rbinom(length(prior_samples), 9, p))
+head(prior_pred)
+```
+
+## Visualize
+
+```{r}
+ggplot(prior_pred,
+       aes(x = G)) + 
+  geom_histogram()
+```
+
+# Linear regression
+
+## Why the Normal is so Normal
+
+```{r}
+n_sims <- 1000
+output<-data.frame(sums = rep(NA, n_sims))
+for(i in 1:1000){
+  temp <- rbinom(1000, 20, 0.1)
+  output$sums[i] <- sum(temp)
+}
+
+ggplot(output, aes(x = sums)) + geom_density()
+```
+
+## Looks familiar...
+
+```{r}
+# convert to z score, x is for plotting
+output <- output |> 
+  mutate(z = scale(sums),
+         x = seq(-5, 5, length.out = n_sims))
+ggplot(output,
+       aes(x = z)) + 
+  geom_density() + 
+  geom_line(aes(x = x, y = dnorm(x, 0, 1)), lty = 2)
+```
+
+## Not just the binomial...
+
+```{r}
+n_sims <- 1000
+output<-data.frame(sums = rep(NA, n_sims))
+for(i in 1:1000){
+  temp <- rpois(100, 3)
+  output$sums[i] <- sum(temp)
+}
+
+hist(temp)
+```
+
+## Sums of random variables ~ N
+```{r}
+ggplot(output, aes(x = sums)) + geom_density()
+```
+
+## Again!
+
+```{r}
+output <- output |> 
+  mutate(z = scale(sums),
+         x = seq(-5, 5, length.out = n_sims))
+ggplot(output,
+       aes(x = z)) + 
+  geom_density() + 
+  geom_line(aes(x = x, y = dnorm(x, 0, 1)), lty = 2)
+```
+
+## Getting to know the Normal
+
+- Normal (Gaussian) have two parameters: mean ($\mu$) and standard deviation ($\sigma$) 
+- These two parameters describe the location and spread of the distribution
+
+## 
+
+```{r size = "tiny", fig.height = 3.5}
+xrange<-seq(-7,7,length.out=100)
+
+normals<-data.frame(x = rep(xrange, 4),
+                    y = c(dnorm(xrange, 0, 1),
+                              dnorm(xrange, 0, 1.5),
+                              dnorm(xrange, 0, 2),
+                              dnorm(xrange, 0, 2.5)),
+                    SD = rep(c("1", "1.5", "2", "2.5"), each = 100))
+
+ggplot(normals, aes(x = x,y = y, color = SD)) + 
+  geom_line()
+```
+
+## 
+
+```{r size = "tiny", fig.height = 3.5}
+xrange<-seq(-5,5,length.out=100)
+
+normals<-data.frame(x = rep(xrange, 4),
+                    y = c(dnorm(xrange, 0, 1),
+                              dnorm(xrange, 0.5, 1),
+                              dnorm(xrange, 1, 1),
+                              dnorm(xrange, 1.5, 1)),
+                    Mu = rep(c("1", "1.5", "2", "2.5"), each = 100))
+
+ggplot(normals, aes(x = x,y = y, color = Mu)) + 
+  geom_line()
+```
+
+## Fun fact: every normal can be a N(0,1)
+
+```{r}
+xrange<-seq(-10,50,length.out=100)
+wide_norm<-dnorm(xrange, mean = 20, sd = 12)
+plot(xrange, wide_norm, type ="l", 
+     main = "N(20, 12)")
+```
+
+## Rescaling N(20,12)
+
+```{r}
+wide_norm<-(wide_norm-20)/12
+## this is the same result as scale(wide_norm)
+## also called z-scores
+plot(seq(-3,3,length.out=100), wide_norm, type ="l", 
+     main = "N(20, 12), rescaled to N(0,1)")
+```
+
+## Model notation
+
+**Likelihood**: $W \sim \textsf{Binomial}(N,p)$
+
+**Prior**: $p \sim \textsf{Uniform}(0,1)$
+
+. . .
+
+- Likelihoods put probability distributions on the data 
+- Priors put probability distributions on the parameters (!!!)
+
+## Building a model of human height
+
+```{r size = "scriptsize"}
+library(rethinking)
+data("Howell1")
+d<-Howell1
+head(d)
+```
+
+## Building a model of human height
+
+$$h_i \sim \textsf{Normal}(\mu, \sigma)$$
+
+. . .
+
+What are the parameters in this model? 
+
+. . .
+
+What is our next step?
+
+## Set priors!
+
+How about $\textsf{Normal}(0, 10)$?
+
+$$\mu \sim N(0,10)$$
+
+## Thoughts?
+
+```{r}
+prior_sims<-rnorm(1e4, 0, 10)
+plot(density(prior_sims))
+```
+
+
+## Rethink the prior for $\mu$
+
+- The average adult male is 176.5 cm
+- the average adult female is 163 cm
+- Maybe we should set  $\mu = \frac{176.5 + 163}{2} = 169.75$ 
+
+## One more parameter needed
+
+How certain are we that the true mean for this sample will be equal to 169.75? 
+
+. . . 
+
+- Completely certain? $\mu \sim N(169.75, 0.01)$ 
+- Pretty darn sure? $\mu \sim N(169.75, 2)$ 
+- Probably in the ballpark $\mu \sim N(169.75, 10)$
+- OK, not too sure, but not a bad guess $\mu \sim N(169.75, 25)$
+
+## Simulate 4 priors for $\mu$
+
+```{r}
+all_the_priors <- data.frame(
+  sigma1 = rnorm(1e4, 169.75, 1),
+  sigma2 = rnorm(1e4, 169.75, 2),
+  sigma10 = rnorm(1e4, 169.75, 10),
+  sigma25 = rnorm(1e4, 168.75, 25)) 
+```
+
+## Distributions of priors for $\mu$
+
+```{r}
+all_the_priors |> 
+  pivot_longer(cols = everything()) |> 
+  ggplot(aes(x = value * 0.0328084, color = name)) + 
+  geom_density(alpha = 0.1) + 
+  labs(x = "Height in feet", color = "Mu prior")
+```
+
+## Now for $\sigma$
+
+- How much do individuals vary on average from the population average? How variable is height? 
+- Recall $sd = \sqrt{\frac{\sum{(x_i - \mu)^2}}{n}}$
+- The average deviation of an observation from the mean
+- $\sigma$ is constrained to be positive, our prior should reflect this
+
+## The impact of $\sigma$ on our prior
+
+Our prior for $\sigma$ captures our beliefs about how much variance there is within the population. 
+
+. . .
+
+*How much variable is height across adults?*
+
+- No idea how variable the population is: $\sigma \sim \textsf{Uniform}(0,50)$
+- We know there's not much variation: $\sigma \sim \textsf{Uniform}(0,10)$
+
+## Understanding the prior: prior predictive simulation
+
+1. Simulate $\mu$
+
+. . .
+
+```{r}
+### simulate mu prior: mu ~ N(169.75, 25) 
+mu_sims<-rnorm(1e4, 169.75, 25)
+```
+
+2. Simulate $\sigma$
+
+. . .
+
+```{r}
+### simulate sigma prior: sigma ~ U(0,50)
+sigma_sims<-runif(1e4, 0, 50)
+```
+
+3. Draw predictions from $N(\mu, \sigma)$ 
+
+. . . 
+
+```{r}
+### prior predictive distribution: y~N(mu, sigma)
+height_preds<-rnorm(1e4, mu_sims, sigma_sims)
+```
+
+
+## Simulating data from the prior
+
+Is our prior reasonable?
+
+```{r}
+data.frame(x = height_preds) |> 
+  ggplot(aes(x = x * 0.032)) + geom_density() + labs(caption = "height in feet")
+```
+
+# Revise the prior!

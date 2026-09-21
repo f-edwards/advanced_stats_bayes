@@ -38,11 +38,11 @@ This is tricky. We can take it as an information definition; I think that the ch
 
 ```{r}
 # define prior for n=3, flat
-prior <- rep(1, 3)
+prior <- rep(1, 4)/4
 # define the grid of possible values of p for n=3
-p_grid <- seq(0, 1, length.out = 3)
+p_grid <- seq(0, 1, length.out = 4)
 # compute the binomial likelihood for n = 3, WWW (so x = 3)
-likelihood <- dbinom(3, 3, p_grid)
+likelihood <- dbinom(x = 3, size = 3, p = p_grid)
 # compute posterior
 posterior <- likelihood*prior / sum(likelihood*prior)
 # format for output
@@ -56,9 +56,9 @@ Note the difference between the posterior and the likelihood. The prior pulls us
 
 ```{r}
 # define prior for n=4, flat
-prior <- rep(1, 4)
+prior <- rep(1, 5)
 # define the grid of possible values of p for n=4
-p_grid <- seq(0, 1, length.out = 4)
+p_grid <- seq(0, 1, length.out = 5)
 # compute the binomial likelihood for n = 4, WWW (so x = 3)
 likelihood <- dbinom(3, 4, p_grid)
 # compute posterior
