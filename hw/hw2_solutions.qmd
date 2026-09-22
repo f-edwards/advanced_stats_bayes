@@ -1,0 +1,229 @@
+---
+title: "Advanced Stats. HW2"
+author: "Your Name Here!"
+format: 
+  html:
+      embed-resources: true
+---
+
+```{r setup, include = F}
+set.seed(1)
+library(tidyverse)
+library(rethinking)
+```
+
+
+Complete the following exercises in Rethinking
+
+3E1-3M5
+
+Provide your homework as a rendered quarto document with all code included.
+
+## 3e1
+
+```{r}
+# create data frame for everything
+dat3e <- data.frame(p_grid = seq(0, 1, length.out=1000),
+                    prior = rep(1, 1000))
+# estimate likelihood
+dat3e <- dat3e |> 
+  mutate(likelihood = dbinom(6, 9, p_grid))
+# compute posterior
+dat3e <- dat3e |> 
+  mutate(posterior = likelihood * prior) |> 
+  mutate(posterior = posterior / sum(posterior))
+# sample from the posterior distribution
+samples <- sample(dat3e$p_grid,
+                  prob = dat3e$posterior,
+                  size = 1e4,
+                  replace = T)
+```
+
+After observing 6 of 9 W with a Binomial likelihood and flat priors, we estimate that `r mean(samples<0.2)` of the posterior probability lies below 0.2. Not very much!
+
+Here's what it looks like because I always like to graphically check the posterior.
+
+```{r}
+samples |> 
+  as.data.frame() |> 
+  ggplot(aes(x = samples)) +
+  geom_density() + 
+  coord_cartesian(xlim = c(0, 1))
+```
+
+There's very little mass below 0.2.
+
+## 3e2
+
+How much probability mass over 0.8? There is `r mean(samples>0.8)` of the mass between 0.8 and 1. More than below 0.2.
+
+## 3e3
+
+How much is between 0.2 and 0.8?
+
+```{r}
+mean((samples>0.2)&(samples<0.8))
+```
+
+Most of it!
+
+## 3e4 
+
+20 percent of the posterior mass falls below `r quantile(samples, 0.2)`
+
+## 3e5
+
+And 20 percent is above `r quantile(samples,0.8)`
+
+## 3e6
+
+Which values contain the narrowest interval with 66% of the probability? It should be centered on the mode given the asymmetry of the distribution.
+
+Here's the mode,
+
+```{r}
+chainmode(samples)
+```
+
+what quantile is that at?
+
+```{r}
+q_mode <- mean(samples<chainmode(samples))
+```
+
+The narrowest interval with 66% of the mass is going to be  `q_mode` $\pm 0.33$
+
+```{r}
+quantile(samples, c(q_mode - 0.33, q_mode + 0.33))
+```
+
+## 3e7
+
+Assuming equal weight above and below the interval means we should cut our interval at the median. Will still have 66% mass but will be wider.
+
+```{r}
+quantile(samples, c(0.5-0.33, 0.5+0.33))
+```
+
+Yep, it's a hair wider than the prior interval.
+
+##3m1
+
+Changing up our data to 8W/15L (8 1s of 15 trials)
+
+```{r}
+# create data frame for everything
+dat3m <- data.frame(p_grid = seq(0, 1, length.out=1000),
+                    prior = rep(1, 1000))
+# estimate likelihood
+dat3m <- dat3m |> 
+  mutate(likelihood = dbinom(8, 15, p_grid))
+# compute posterior
+dat3m <- dat3m |> 
+  mutate(posterior = likelihood * prior) |> 
+  mutate(posterior = posterior / sum(posterior))
+# sample from the posterior distribution
+samples <- sample(dat3m$p_grid,
+                  prob = dat3m$posterior,
+                  size = 1e4,
+                  replace = T)
+```
+
+And here's the posterior
+
+```{r}
+samples |> 
+  as.data.frame() |> 
+  ggplot(aes(x = samples)) + 
+  geom_density() + 
+  coord_cartesian(xlim = c(0,1))
+```
+
+## 3m2
+
+Already drew 10,000 samples above. Let's calculate the highest density posterior interval (centered at the mode!). We could do it as above, but we'll use the `HPDI` function this time.
+
+```{r}
+HPDI(samples, 0.9)
+```
+
+## 3m3
+
+Posterior predictive draws, that means sampling using our sampled $p$ values. 
+
+```{r}
+p_pred <- rbinom(1e4, 15, samples)
+```
+
+here's the distribution
+
+```{r}
+hist(p_pred)
+```
+
+How likely is 8/15?
+
+`r mean(p_pred==8)`
+
+## 3m4
+ 
+Ok, simulating different data! 6 w of 9
+
+```{r}
+p_pred <- rbinom(1e4, 9, samples)
+mean(p_pred==6)
+```
+
+## 3m5
+
+```{r}
+# create data frame for everything
+dat3m <- data.frame(p_grid = seq(0, 1, length.out=1000))
+# new prior, 0 below 0.5 constant above
+dat3m <- dat3m |> 
+  mutate(prior = ifelse(p_grid<0.5, 0, 1))
+# estimate likelihood
+dat3m <- dat3m |> 
+  mutate(likelihood = dbinom(8, 15, p_grid))
+# compute posterior
+dat3m <- dat3m |> 
+  mutate(posterior = likelihood * prior) |> 
+  mutate(posterior = posterior / sum(posterior))
+# sample from the posterior distribution
+samples <- sample(dat3m$p_grid,
+                  prob = dat3m$posterior,
+                  size = 1e4,
+                  replace = T)
+```
+
+New posterior:
+
+```{r}
+samples |> 
+  as.data.frame() |> 
+  ggplot(aes(x = samples)) + 
+  geom_density() + 
+  coord_cartesian(xlim = c(0,1))
+```
+
+New interval:
+
+```{r}
+HPDI(samples, 0.9)
+```
+
+New check on 8/15
+
+```{r}
+p_pred <- rbinom(1e4, 15, samples)
+mean(p_pred==9)
+```
+
+And new check on 6/9
+
+```{r}
+p_pred <- rbinom(1e4, 9, samples)
+mean(p_pred==6)
+```
+
+We've got higher probabilities across the board. Ruling out nonsense values helped us out! Informative prior for the win. 
