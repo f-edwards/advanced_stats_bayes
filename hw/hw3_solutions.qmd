@@ -1,0 +1,128 @@
+---
+title: "Advanced Stats. HW3"
+author: "Your Name Here!"
+format: pdf
+---
+
+Complete the following exercises in Rethinking
+
+3H1-3H5
+
+Provide your homework as a rendered quarto document with all code included.
+
+The homework uses this data
+```{r}
+library(rethinking)
+library(tidyverse)
+data(homeworkch3)
+# put it in a data frame for convenience
+dat <- data.frame(birth1 = birth1, birth2 = birth2)
+```
+
+```{r}
+n_sims <- 1e4
+
+my_data <- data.frame(
+  p_grid = seq(0, 1, length.out=1000),
+  prior = 1) |> 
+  mutate(likelihood = 
+           dbinom(111, 200, prob = p_grid))
+
+ggplot(my_data,
+       aes(x = p_grid, y = likelihood)) + 
+  geom_line()
+
+my_data <- my_data |> 
+  mutate(posterior = likelihood * prior / sum(likelihood * prior))
+
+ggplot(my_data,
+       aes(x = p_grid, y = posterior)) + 
+  geom_line() 
+
+my_data |> 
+  filter(posterior == max(posterior))
+
+post_samples <- sample(my_data$p_grid, 
+                       1e4,
+                       prob = my_data$posterior,
+                       replace = T)
+
+post_pred <- rbinom(1e4, 
+                    200,
+                    p = post_samples)
+
+chainmode(post_samples)
+```
+
+## 3h2
+
+```{r}
+HPDI(post_samples, prob = c(0.5, 0.89, 0.97))
+```
+
+## 3h3
+
+```{r}
+ggplot(data.frame(x=post_pred), aes(x = x)) + 
+  geom_histogram() + 
+  geom_vline(xintercept = 111, lty = 2)
+```
+
+## 3h4
+
+```{r}
+n_sims <- 1e4
+
+my_data <- data.frame(
+  p_grid = seq(0, 1, length.out=1000),
+  prior = 1) |> 
+  mutate(likelihood = 
+           dbinom(sum(dat$birth1), nrow(dat), prob = p_grid)) |> 
+  mutate(posterior = likelihood * prior / sum(likelihood * prior))
+
+
+post_samples <- sample(my_data$p_grid, 
+                       1e4,
+                       prob = my_data$posterior,
+                       replace = T)
+
+post_pred <- rbinom(1e4, 
+                    200,
+                    p = post_samples)
+
+
+ggplot(data.frame(x=post_pred), aes(x = x)) + 
+  geom_histogram() + 
+  geom_vline(xintercept = 111, lty = 2)
+
+```
+
+## 3h5
+
+```{r}
+dat_fem <- dat |> 
+  filter(birth1==0)
+
+my_data <- data.frame(
+  p_grid = seq(0, 1, length.out=1000),
+  prior = 1) |> 
+  mutate(likelihood = 
+           dbinom(trunc(111/200 * nrow(dat_fem)), nrow(dat_fem), prob = p_grid)) |> 
+  mutate(posterior = likelihood * prior / sum(likelihood * prior))
+
+post_samples <- sample(my_data$p_grid, 
+                       1e4,
+                       prob = my_data$posterior,
+                       replace = T)
+
+post_pred <- rbinom(1e4, 
+                    nrow(dat_fem),
+                    p = post_samples)
+
+
+ggplot(data.frame(x=post_pred), aes(x = x)) + 
+  geom_histogram()+ 
+  geom_vline(xintercept = sum(dat_fem$birth2), lty = 2)
+```
+
+

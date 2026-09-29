@@ -111,10 +111,15 @@ Yep, it's a hair wider than the prior interval.
 
 Changing up our data to 8W/15L (8 1s of 15 trials)
 
+$p(p|data) = \frac{p(data|p)p(p)}{p(data)}$
+
 ```{r}
 # create data frame for everything
 dat3m <- data.frame(p_grid = seq(0, 1, length.out=1000),
                     prior = rep(1, 1000))
+
+ggplot(dat3m,
+       aes(x = p_grid, y = likelihood)) + geom_line()
 # estimate likelihood
 dat3m <- dat3m |> 
   mutate(likelihood = dbinom(8, 15, p_grid))
