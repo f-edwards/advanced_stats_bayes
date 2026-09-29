@@ -1,0 +1,651 @@
+---
+title: "4. Linear regression"
+author: "Frank Edwards"
+format:
+  revealjs: 
+    theme: dark
+    embed-resources: true
+    incremental: true
+execute: 
+  echo: true
+---
+
+```{r setup, include=FALSE}
+library(rethinking)
+library(gridExtra)
+library(tidyverse)
+library(brms)
+library(patchwork)
+library(tidybayes)
+theme_set(theme_bw())
+```
+
+## Model notation
+
+**Likelihood**: $W \sim \textsf{Binomial}(N,p)$
+
+**Prior**: $p \sim \textsf{Uniform}(0,1)$
+
+. . .
+
+- Likelihoods put probability distributions on the data 
+- Priors put probability distributions on the parameters (!!!)
+
+## Building a model of human height
+
+```{r size = "scriptsize"}
+library(rethinking)
+data("Howell1")
+d<-Howell1
+# subset out children
+d2 <- d |> 
+  filter(age>=18)
+head(d2)
+nrow(d)
+nrow(d2)
+```
+
+## How to bake a Bayesian model
+
+1. *Define the likelihood*
+2. Set priors
+3. Check that our priors are reasonable with simulation
+4. Condition on the data
+5. Visualize the posterior
+
+## Defining our likelihood
+
+$$h_i \sim \textsf{Normal}(\mu, \sigma)$$
+
+## How to bake a Bayesian model
+
+1. Define the likelihood
+2. *Set priors*
+3. Check that our priors are reasonable with simulation
+4. Condition on the data
+5. Visualize the posterior
+
+## Simulate 4 priors for $\mu$
+
+```{r}
+all_the_priors <- data.frame(
+  sigma1 = rnorm(1e4, 178, 1),
+  sigma2 = rnorm(1e4, 178, 2),
+  sigma10 = rnorm(1e4, 178, 10),
+  sigma25 = rnorm(1e4, 178, 20)) 
+```
+
+## Distributions of priors for $\mu$
+
+```{r}
+all_the_priors |> 
+  pivot_longer(cols = everything()) |> 
+  ggplot(aes(x = value, color = name)) + 
+  geom_density() + 
+  labs(x = "Height in cm", color = "Mu prior")
+```
+
+## Now for $\sigma$
+
+- How much do individuals vary on average from the population average? How variable is height? 
+- Recall $sd = \sqrt{\frac{\sum{(x_i - \mu)^2}}{n}}$
+- The average deviation of an observation from the mean
+- $\sigma$ is constrained to be positive, our prior should reflect this
+
+## The impact of $\sigma$ on our prior
+
+Our prior for $\sigma$ captures our beliefs about how much variance there is within the population. 
+
+. . .
+
+*How much variable is height across adults?*
+
+- No idea how variable the population is: $\sigma \sim \textsf{Uniform}(0,50)$
+- We know there's not much variation: $\sigma \sim \textsf{Uniform}(0,10)$
+
+## How to bake a Bayesian model
+
+1. Define the likelihood
+2. Set priors
+3. *Check that our priors are reasonable with simulation*
+4. Condition on the data
+5. Visualize the posterior
+
+## Prior simulation
+
+1. Simulate $\mu$
+
+. . .
+
+```{r}
+### simulate mu prior: mu ~ N(178, 20) 
+mu_sims<-rnorm(1e4, 178, 20)
+```
+
+2. Simulate $\sigma$
+
+. . .
+
+```{r}
+### simulate sigma prior: sigma ~ U(0,50)
+sigma_sims<-runif(1e5, 0, 50)
+```
+
+3. Draw predictions from $N(\mu, \sigma)$ 
+
+. . . 
+
+```{r}
+### prior predictive distribution: y~N(mu, sigma)
+height_preds<-rnorm(1e5, mu_sims, sigma_sims)
+```
+
+## Visualize our prior
+
+```{r echo = F}
+p1 <- data.frame(x = mu_sims) |> 
+  ggplot(aes(x = mu_sims)) + 
+  geom_density() + 
+  labs(subtitle = "Mu ~ N(178,25)")
+
+p2 <- data.frame(x=sigma_sims) |> 
+  ggplot(aes(x = x)) + 
+  geom_density() +
+  labs(subtitle = "sigma ~ Unif(0,50)")
+
+p1+p2
+```
+
+## Visualize prior predictions
+
+```{r echo = F}
+ggplot(data.frame(x=height_preds),
+       aes(x = x)) + 
+  geom_density() + 
+  geom_vline(xintercept = 272, lty = 2)
+```
+
+# Fitting the model
+
+## Recipe
+
+1. Define the likelihood
+2. Set priors
+3. Check that our priors are reasonable with simulation
+4. *Condition on the data*
+5. Visualize the posterior
+
+## Math -> R (quap)
+
+**Likelihood:** $h_i \sim Normal(\mu, \sigma)$
+
+$\mu$ **Prior:** $\mu \sim Normal(178, 20)$
+
+$\sigma$ **Prior:** $\sigma \sim Uniform(0,50)$
+
+```{r size = "tiny"}
+## define model
+model_formula<-alist(
+  height ~ dnorm(mu, sigma),
+  mu ~ dnorm(178, 20),
+  sigma ~ dunif(0,50)
+)
+## estimate with quap
+m0<-quap(model_formula, data = d2)
+summary(m0)
+```
+
+## Math -> R (brms)
+
+```{r cache = T}
+prior_mu <- prior(normal(178,20), class = "Intercept")
+prior_sigma <- prior(uniform(0, 50), class = "sigma", ub=50)
+priors <- c(prior_mu, prior_sigma)
+b0 <- brm(height ~ 1,
+          family = gaussian(),
+          prior = priors,
+          data = d2,
+          silent = 2)
+```
+
+## Model output
+
+```{r}
+summary(m0)
+```
+
+## Model output
+
+```{r}
+summary(b0)
+```
+
+## Recipe
+
+1. Define the likelihood
+2. Set priors
+3. Check that our priors are reasonable with simulation
+4. Condition on the data
+5. *Visualize the posterior*
+
+## Sample the posterior: rethinking
+
+```{r}
+post_m0 <- extract.samples(m0)
+head(post_m0)
+```
+
+## Sample the posterior: tidybayes + brms
+
+```{r}
+post_b0 <- as_draws_df(b0)
+head(post_b0)
+```
+
+## Summarizing the posterior: mu
+
+```{r echo = F}
+p1 <- ggplot(post_m0, aes(x = mu)) + geom_density() + labs(subtitle = "rethinking::quap")
+p2 <- ggplot(post_b0, aes(x = b_Intercept)) + geom_density() + labs(subtitle = "brms")
+p1+p2
+```
+
+## Summarizing the posterior: sigma
+
+```{r echo = F}
+p1 <- ggplot(post_m0, aes(x = sigma)) + geom_density() + labs(subtitle = "rethinking::quap")
+p2 <- ggplot(post_b0, aes(x = sigma)) + geom_density() + labs(subtitle = "brms")
+p1+p2
+```
+
+## The full posterior
+
+```{r}
+p1 <- ggplot(post_m0, aes(x = mu, y = sigma)) + 
+  geom_point(alpha = 0.1) + 
+  labs(subtitle = "rethinking::quap") + 
+  coord_cartesian(xlim=c(152, 157), ylim = c(6.5, 9))
+p2 <- ggplot(post_b0, aes(x = b_Intercept, y = sigma)) + 
+  geom_point(alpha = 0.1) + 
+  labs(subtitle = "brms") + 
+  coord_cartesian(xlim=c(152, 157), ylim = c(6.5, 9))
+p1+p2
+```
+
+## Compare results to the prior
+
+```{r}
+p1<-data.frame(x = mu_sims) |> 
+  ggplot(aes(x = x)) + 
+  geom_density() + 
+  ggtitle("Prior, mu")+ 
+  coord_cartesian(xlim=c(100, 250))
+
+p2<-ggplot(post_b0,
+           aes(x = b_Intercept)) + 
+  geom_density() +
+  ggtitle("Posterior, mu") + 
+  coord_cartesian(xlim=c(100, 250))
+
+p1/p2
+```
+
+## Posterior prediction
+
+```{r}
+# rethinking
+post_pred1 <- rnorm(1e4, post_m0$mu, post_m0$sigma)
+# brms manual mode
+post_pred2 <- rnorm(1e4, post_b0$b_Intercept, post_b0$sigma)
+# brms easy mode, just take the first row for 'newdata' for now
+post_pred3 <- predicted_draws(b0, d2[1,])
+```
+
+## Visualize posterior predictions
+
+```{r}
+post_pred <- ggplot(post_pred3,
+       aes(x = .prediction)) + 
+  geom_histogram() + 
+  labs(subtitle = "Posterior p[redictions")
+observed <- ggplot(d2,
+                   aes(x = height)) + 
+  geom_histogram() + 
+  labs(subtitle = "Observed")
+post_pred+observed
+```
+
+## Visualize posterior predictions (easy mode)
+
+```{r}
+pp_check(b0, ndraws = 50)
+```
+
+# Moving beyond an intercept-only model
+
+## Predicting height with other variables
+
+```{r fig.height = 3.5}
+ggplot(d2, 
+       aes(x = weight, y = height)) + 
+  geom_point()
+```
+
+
+## Recipe
+
+1. *Define the likelihood*
+2. Set priors
+3. Check that our priors are reasonable with simulation
+4. Condition on the data
+5. Visualize the posterior
+
+## The anatomy of a linear model
+
+Begin with the Normal model of height
+
+$$h_i \sim \textsf{Normal}(\mu, \sigma)$$ 
+$$\mu \sim \textsf{Normal}(178, 20)$$
+$$\sigma \sim \textsf{Uniform}(0,50)$$
+
+## Changing how we define mu
+
+. . . 
+
+Let $x_i$ be the weight of the person in row $i$
+
+. . . 
+
+$$h_i \sim \textsf{Normal}(\mu_i, \sigma)$$
+
+. . . 
+
+$$\mu_i = \alpha + \beta (x_i - \bar{x})$$
+
+## Recipe
+
+1. Define the likelihood
+2. *Set priors*
+3. Check that our priors are reasonable with simulation
+4. Condition on the data
+5. Visualize the posterior
+
+## Priors for our new parameters
+
+Our prior now describes a line: $mu = \alpha + \beta x$ 
+
+. . . 
+
+$$\alpha \sim \textsf{Normal}(178, 20)$$
+
+. . . 
+
+$$\beta \sim \textsf{Normal}(0, 10)$$
+
+## Recipe
+
+1. Define the likelihood
+2. Set priors
+3. *Check that our priors are reasonable with simulation*
+4. Condition on the data
+5. Visualize the posterior
+
+## What does our prior imply?
+
+```{r size = "tiny", fig.height =3}
+## Simulate regression lines from prior and visualize
+n<-100
+alpha<-rnorm(n, 178, 20)
+beta<-rnorm(n, 0, 10)
+```
+
+## What does our prior imply?
+
+```{r echo = F}
+plot_dat<-data.frame(alpha = alpha, beta=beta, sim_n = factor(1:100), 
+                     weight = seq(-70, 70, length.out=100),
+                     height = seq(-200,400, length.out=100))
+ggplot(plot_dat, 
+       aes(x = weight, y = height)) + 
+  geom_blank() +
+  geom_abline(aes(intercept = alpha, 
+                  slope = beta,
+                  group= sim_n),
+              alpha = 0.25)
+```
+
+## What does our prior imply?
+
+```{r echo = F}
+## Simulate regression lines from prior and visualize
+n<-1000
+alpha<-rnorm(n, 178, 20)
+beta<-rnorm(n, 0, 10)
+
+plot_dat<-data.frame(alpha = alpha, beta=beta, sim_n = factor(1:n), 
+                     weight = seq(-70, 70, length.out=n),
+                     height = seq(-200,400, length.out=n))
+ggplot(plot_dat, 
+       aes(x = weight, y = height)) + 
+  geom_blank() +
+  geom_abline(aes(intercept = alpha, 
+                  slope = beta,
+                  group= sim_n),
+              alpha = 0.1)
+```
+
+## Let's try again
+
+Let's shrink the spread on $\alpha$, and set $\beta$ to be more likely positive
+
+```{r size = "tiny", fig.height =3}
+## Simulate regression lines from prior and visualize
+n<-1000
+alpha<-rnorm(n, 178, 15)
+beta<-rnorm(n, 2, 2)
+plot_dat<-data.frame(alpha = alpha, beta=beta, sim_n = factor(1:n), 
+                     weight = seq(-70, 70, length.out=n),
+                     height = seq(-200,400, length.out=n))
+ggplot(plot_dat, 
+       aes(x = weight, y = height)) + 
+  geom_blank() +
+  geom_abline(aes(intercept = alpha, 
+                  slope = beta,
+                  group= sim_n),
+              alpha = 0.1)
+```
+
+## Recipe
+
+1. Define the likelihood
+2. Set priors
+3. Check that our priors are reasonable with simulation
+4. *Condition on the data*
+5. Visualize the posterior
+
+## Estimating the model
+
+- **Likelihood for height:** $h_i \sim Normal(\mu_i, \sigma)$
+- **Linear model for mean:** $\mu_i = \alpha + \beta x_i$
+- **Prior for intercept:** $\alpha \sim Normal(178, 15)$
+- **Prior for slope:** $\beta \sim Normal(2,2)$
+- **Prior for standard deviation:** $\sigma \sim Uniform(0,50)$
+
+## Estimation
+
+```{r cache = T}
+# create x-xbar centered weight
+d2 <- d2 |> 
+  mutate(weight.c = weight - mean(weight))
+
+prior_alpha <- prior(normal(178,15), class = "Intercept")
+prior_beta <- prior(normal(2, 2), class ="b")
+prior_sigma <- prior(uniform(0, 50), class = "sigma", ub=50)
+priors <- c(prior_alpha, prior_beta, prior_sigma)
+m1 <- brm(height ~ weight.c,
+          family = gaussian(),
+          prior = priors,
+          data = d2,
+          silent = 2)
+```
+
+## Recipe
+
+1. Define the likelihood
+2. Set priors
+3. Check that our priors are reasonable with simulation
+4. Condition on the data
+5. *Visualize the posterior*
+
+## Interpreting the posterior: table
+
+```{r}
+summary(m1)
+```
+
+## Examining posterior samples
+
+```{r}
+post_m1<-as_draws_df(m1) |> 
+  rename(alpha = b_Intercept, beta = b_weight.c) |> 
+  select(alpha, beta, sigma)
+head(post_m1)
+```
+
+## Visualizing the estimated posterior: posterior mean
+
+```{r}
+plot_dat<-post_m1 |> 
+  summarise(a = mean(alpha), b = mean(beta))
+ggplot(d2,
+       aes(x = weight.c, y = height)) + 
+  geom_point() + 
+  geom_abline(data = plot_dat,
+              aes(intercept = a, slope = b))
+```
+
+## But the posterior is more than one line
+
+```{r size = "tiny", fig.height = 3}
+ggplot(d2,
+       aes(x = weight.c, y = height)) + 
+  geom_point() + 
+  geom_abline(data = post_m1[1:100,],
+              aes(intercept = alpha, slope = beta), alpha = 0.1)
+```
+
+## At a single value of x
+
+I weigh about 88 kg. Let's solve for $h$
+
+$$E(h_i) = \mu_i = \alpha + \beta (x_i-\bar{x})$$
+
+```{r fig.height = 3}
+mu_FE<-post_m1$alpha + post_m1$beta * (88 - mean(d2$weight))
+dens(mu_FE)
+```
+
+These are the values of $\mu$ for individuals of weight 88kg that are compatible with the data and the model
+
+## A problem: extrapolation!
+
+```{r}
+ggplot(d2,
+       aes(x = weight, y = height)) + 
+  geom_point()
+```
+
+
+## Summarizing the posterior over the full range of the data
+
+```{r size = "tiny"}
+## create a vector for the sequence of values to predict
+weights<-seq(min(d2$weight), max(d2$weight), by=1)
+sim_dat<-data.frame(weight.c = weights - mean(d2$weight))
+## add_epred_draws adds posterior samples of the linear predictor for mu
+mu<-sim_dat |> 
+  add_epred_draws(m1)
+head(mu)
+```
+
+## Visualizing the posterior for mu: with CI
+
+```{r}
+ggplot(mu,
+       aes(x = weight.c, y = .epred)) + 
+  stat_lineribbon() + 
+  scale_fill_brewer(palette = "Blues") + 
+  geom_point(data = d2, aes(x = weight.c, y = height), alpha = 0.25)
+```
+
+## Predicting new data; validating the model
+
+Recall the method for posterior prediction:
+
+1. Draw samples of the parameters from the posterior
+2. Use these samples to draw new predictions using the likelihood 
+
+. . . 
+
+```{r}
+## already got the samples in post_m1
+head(post_m1)
+```
+
+. . .
+
+We haven't used $\sigma$ yet. It will tell our model how much sampling uncertainty to produce
+
+## Method for posterior prediction (manual)
+
+```{r}
+# iterate over all posterior uncertainty
+n_sims <- nrow(post_m1)
+# empty bucket for output
+post_pred <- list()
+for(i in 1:nrow(sim_dat)){
+  # set up deterministic component
+  linear_predictor <- post_m1$alpha + post_m1$beta * sim_dat$weight.c[i]
+  # and stochastic component, draw n_sims for each weight.c and posterior combination
+  post_pred[[i]] <- data.frame(ppd = rnorm(n_sims, mean = linear_predictor, sd = post_m1$sigma), 
+                               weight.c = sim_dat$weight.c[i])
+}
+post_pred <- bind_rows(post_pred)
+head(post_pred)
+```
+
+## Method for posterior prediction (easy mode)
+
+```{r}
+sim_postpred <- sim_dat |> 
+  add_predicted_draws(m1)
+head(sim_postpred)
+```
+
+## Visualize both sigma uncertainty
+
+```{r}
+ggplot(d2,
+       aes(x = weight.c, y = height)) + 
+  geom_point() + 
+  # stat_lineribbon(data = mu, aes(x = weight.c, y = .epred)) + 
+  stat_lineribbon(data = sim_postpred, aes(x = weight.c, y = .prediction), alpha = 0.5) + 
+  scale_fill_brewer() 
+```
+
+## Visualize both mu and sigma uncertainty
+
+```{r echo = F}
+p1 <- ggplot(d2,
+       aes(x = weight.c, y = height)) + 
+  geom_point() + 
+  stat_lineribbon(data = sim_postpred, aes(x = weight.c, y = .prediction), alpha = 0.5) + 
+  scale_fill_brewer() 
+
+p2 <- ggplot(d2,
+       aes(x = weight.c, y = height)) + 
+  geom_point() + 
+  stat_lineribbon(data = mu, aes(x = weight.c, y = .epred), alpha = 0.75) +
+  scale_fill_brewer() 
+p1+p2
+```
