@@ -395,8 +395,8 @@ $$\beta \sim \textsf{Normal}(0, 10)$$
 ```{r size = "tiny", fig.height =3}
 ## Simulate regression lines from prior and visualize
 n<-100
-alpha<-rnorm(n, 178, 20)
-beta<-rnorm(n, 0, 10)
+alpha<-rnorm(n, 178, 15)
+beta<-rnorm(n, 5, 3)
 ```
 
 ## What does our prior imply?
@@ -442,7 +442,7 @@ Let's shrink the spread on $\alpha$, and set $\beta$ to be more likely positive
 ## Simulate regression lines from prior and visualize
 n<-1000
 alpha<-rnorm(n, 178, 15)
-beta<-rnorm(n, 2, 2)
+beta<-rnorm(n, 3, 1.5)
 plot_dat<-data.frame(alpha = alpha, beta=beta, sim_n = factor(1:n), 
                      weight = seq(-70, 70, length.out=n),
                      height = seq(-200,400, length.out=n))
@@ -487,6 +487,22 @@ m1 <- brm(height ~ weight.c,
           prior = priors,
           data = d2,
           silent = 2)
+
+m2 <- brm(height ~ weight,
+          family = gaussian(),
+          prior = priors,
+          data = d2,
+          silent = 2)
+
+post1 <- as_draws_df(m1)
+post2 <- as_draws_df(m2)
+
+ggplot(post1, aes(x = b_Intercept, y = b_weight.c)) + 
+  geom_point()
+
+ggplot(post2, aes(x = b_Intercept, y = b_weight)) + 
+  geom_point()
+
 ```
 
 ## Recipe

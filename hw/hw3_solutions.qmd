@@ -42,6 +42,8 @@ ggplot(my_data,
 my_data |> 
   filter(posterior == max(posterior))
 
+my_data[which(my_data$posterior==max(my_data$posterior)),]
+
 post_samples <- sample(my_data$p_grid, 
                        1e4,
                        prob = my_data$posterior,

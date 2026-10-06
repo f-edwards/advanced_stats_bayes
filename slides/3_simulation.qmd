@@ -540,3 +540,59 @@ data.frame(x = height_preds) |>
 ```
 
 # Revise the prior!
+
+```{r}
+prior_pred_25 <- height_preds
+
+mu_sims<-rnorm(1e4, 169.75, 10)
+sigma_sims<-runif(1e4, 0, 50)
+turtle_prior<-rnorm(1e4, mu_sims, sigma_sims)
+hist(turtle_prior)
+
+plot_dat <- data.frame(prior25=prior_pred_25,
+                       turtle = turtle_prior)
+
+ggplot(plot_dat, aes(x = prior25)) + 
+  geom_density() + 
+  geom_density(aes(x = turtle_prior), color = "green")
+
+mu_sims<-rnorm(1e4, 169.75, 5)
+sigma_sims<-runif(1e4, 0, 50)
+prior5<-rnorm(1e4, mu_sims, sigma_sims)
+hist(turtle_prior)
+
+plot_dat <- data.frame(prior25=prior_pred_25,
+                       turtle = turtle_prior,
+                       prior5 = prior5)
+
+ggplot(plot_dat, aes(x = prior_pred_25)) + 
+  geom_density() + 
+  geom_density(aes(x = turtle_prior), color = "green") + 
+  geom_density(aes(x = prior5), color= "red")
+
+mu_sims<-rnorm(1e4, 169.75, 5)
+sigma_sims<-runif(1e4, 0, 50)
+prior2<-rnorm(1e4, mu_sims, sigma_sims)
+ggplot(plot_dat, aes(x = prior_pred_25)) + 
+  geom_density() + 
+  geom_density(aes(x = turtle_prior), color = "green") + 
+  geom_density(aes(x = prior5), color= "red") + 
+  geom_density(aes(x = prior2), color = "blue")
+
+
+mu_sims<-rnorm(1e4, 169.75, 5)
+sigma_sims<-runif(1e4, 0, 40)
+prior5s40<-rnorm(1e4, mu_sims, sigma_sims)
+ggplot(plot_dat, aes(x = prior5)) + 
+  geom_density() + 
+  geom_density(aes(x = prior5s40), color = "dodgerblue")
+
+mu_sims<-rnorm(1e4, 169.75, 5)
+sigma_sims<-runif(1e4, 0, 30)
+prior5s30<-rnorm(1e4, mu_sims, sigma_sims)
+ggplot(plot_dat, aes(x = prior5)) + 
+  geom_density() + 
+  geom_density(aes(x = prior5s40), color = "dodgerblue") + 
+  geom_density(aes(x = prior5s30), color = "maroon")
+```
+
