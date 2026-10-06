@@ -1,0 +1,12 @@
+---
+title: "Advanced Stats. HW4"
+author: "Your Name Here!"
+format: pdf
+---
+
+Complete the following exercises in Rethinking
+
+8E1-8E3, 8M1, 8H4
+
+Provide your homework as a rendered quarto document with all code included.
+

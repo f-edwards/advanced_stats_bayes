@@ -1,0 +1,134 @@
+---
+title: "Advanced Stats. HW4"
+author: "Your Name Here!"
+format: pdf
+---
+
+Complete the following exercises in Rethinking
+
+4E1-4E5; 4M1-4M7
+
+Provide your homework as a rendered quarto document with all code included.
+
+## 4E1
+
+The likelihood is $y_i \sim N(\mu, \sigma)$
+
+## 4E2
+
+There are two parameters in the posterior, $mu$ and $sigma$. 
+
+## 4E3
+
+$$P(\mu, \sigma |y) = \frac{p(y|\mu, \sigma) p(\mu) p(\sigma)}{p(y)}$$
+
+## 4E4 
+
+The linear model is $\mu_i = \alpha + \beta x_i$
+
+## 4E5
+
+There are three parameters in the posterior: $\alpha, \beta, \sigma$
+
+## 4M1
+
+Simulating from the prior 
+
+```{r}
+n_sims <- 1e3
+mu <- rnorm(n_sims, 0, 10)
+sigma <- rexp(n_sims, 1)
+```
+
+## 4M2
+
+Using quap or brms is fine
+
+```{r}
+# m2_priors <- c(
+#   set_prior("normal(0,10)", class = "Intercept"),
+#   set_prior("exponential(1)", class = "sigma"))
+# # do not run
+# m2 <- brm(y ~ 1, data = ?, prior = m2_priors)
+# m2_q <- quap(
+#   alist(
+#     y ~ dnorm(mu, sigma),
+#     mu <- dnorm(0, 10),
+#     sigma <- dexp(1)
+# ))
+```
+
+## 4M3
+
+$$y \sim N(\mu, sigma)$$
+$$\mu = \alpha + \beta x$$
+$$\alpha \sim N(0, 10)$$
+$$\beta \sim N(0,1)$$
+$$\sigma \sim Exponential(1)$$
+
+## 4M4
+
+$$h_i \sim (\mu_i, \sigma)$$
+$$\mu_i = \alpha + \beta t_i$$
+$$\alpha \sim N(0, 10)$$
+$$\beta \sim N(0,1)$$
+$$\sigma \sim Exponential(1)$$
+
+Using vague prior on intercept, narrow prior on slope for year is sensible. 
+
+Exponential on sigma is generally a good call.
+
+## 4M5
+
+So negative values on beta aren't possible (no shrinking!)
+
+We should constrain $\beta$ to be strictly non-negative. The lognormal should handle this well.
+
+Revise the prior on $\beta$
+
+$$\beta \sim lognormal(0,1)$$ 
+
+## 4M6
+
+Again, a constraint on the prior. We can either go Uniform with boundaries at 0 and 64, or truncate the exponential distribution at 64, either way is reasonable.
+
+## 4M7
+m4.3 <- quap(  alist(  height ~ dnorm( mu , sigma ) , mu <- a + b*( weight - xbar ) , a ~ dnorm( 178 , 20 ) , b ~ dlnorm( 0 , 1 ) , sigma ~ dunif( 0 , 50 ) ) , data=d2 )
+
+
+```{r}
+library(rethinking) 
+library(brms)
+library(tidyverse)
+data(Howell1) 
+d <- Howell1  
+d <- d |> filter(age>=18)
+
+
+
+
+priors <- c(
+  set_prior("normal(178,20)", class = "Intercept"),
+  set_prior("normal(0, 1)", class = "b"),
+  set_prior("exponential(1)", class = "sigma"))
+
+m4.3 <- brm(height ~ scale(weight),
+                    data = d, 
+                    prior = priors)
+
+
+m4.3_revised <- brm(height ~ weight,
+                    data = d, 
+                    prior = priors)
+# take posterior samples
+posterior <- as_draws_df(m4.3_revised)
+posterior_revised <- as_draws_df(m4.3_revised)
+# plot covariance of intercept and slope (scatterplot works)
+
+ggplot(posterior,
+       aes(x = b_Intercept, 
+           y = b_weight)) + 
+  geom_point()
+
+```
+
