@@ -1,0 +1,841 @@
+---
+title: "5. Nonlinear linear regression"
+author: "Frank Edwards"
+format:
+  revealjs: 
+    theme: dark
+    embed-resources: true
+    incremental: true
+execute: 
+  echo: true
+---
+
+```{r setup, include=FALSE}
+library(rethinking)
+library(gridExtra)
+library(tidyverse)
+library(brms)
+library(patchwork)
+library(tidybayes)
+theme_set(theme_bw())
+```
+
+# Returning to the height model
+
+## The anatomy of a linear model
+
+$$\textsf{Likelihood: }  h_i \sim \textsf{Normal}(\mu_i, \sigma)$$
+$$\textsf{Linear model: } \mu_i = \alpha + \beta x_i$$
+$$\textsf{Prior: }\alpha \sim \textsf{Normal}(150, 25)$$
+$$\textsf{Prior: }\beta \sim \textsf{Uniform}(0, 5)$$
+$$\textsf{Prior: }\sigma \sim \textsf{Uniform}(0,10)$$
+
+## Estimating this model
+
+```{r echo=T}
+data(Howell1)
+d<-Howell1 |> 
+  filter(age>=18)
+m0<-quap(
+  flist = alist(
+    height ~ dnorm(mu, sigma),
+    mu<-a + b * weight,
+    a ~ dnorm(150, 25),
+    b ~ dunif(0, 5),
+    sigma ~ dunif(0,10)
+  ),
+  data = d
+)
+```
+
+## Generate prior predictions
+
+Prior predictions let us confirm that our priors make logical sense for our question
+
+```{r echo = F}
+prior_dist<-extract.prior(m0)
+plot_dat<-as.data.frame(prior_dist)
+ggplot(plot_dat) + 
+  geom_blank()+
+  xlim(30, 70) + 
+  ylim(50, 700) +
+  geom_abline(aes(intercept = a, slope = b),
+              alpha = 0.1) + 
+  xlab("Weight") + 
+  ylab("Height")
+```
+
+## Draw posterior samples and visualize parameters
+
+```{r echo = F}
+summary(m0)
+post_m0<-extract.samples(m0)
+a<-ggplot(post_m0, aes(x = a)) + geom_density()
+b<-ggplot(post_m0, aes(x = b)) + geom_density()
+grid.arrange(a, b)
+```
+
+## Predict from the posterior and compare to observed
+
+```{r echo = F}
+sim_dat<-data.frame(weight = seq(30, 65, length.out = nrow(d))) # generate weights to predict at
+sims<-sim(m0, data = sim_dat) ## draw posterior predictions using defined weights
+sims_pi<-apply(sims, 2, PI) ## construct 89% PI
+sim_dat$sim_upr<-sims_pi[2,] ## attach PI to plotting data.frame
+sim_dat$sim_lwr<-sims_pi[1,] ## attach PI to plotting data.frame
+ggplot(d, aes(x = weight, y = height)) + 
+  geom_point() + ## add scatterplot
+  geom_ribbon(aes( ## add PI from posterior predictions
+    x = sim_dat$weight,
+    ymin = sim_dat$sim_lwr,
+    ymax = sim_dat$sim_upr),
+    alpha = 0.2)
+```
+
+# Fitting curves in linear regression models
+
+## Polynomials: linear
+
+```{r echo = F}
+ggplot(data = data.frame(x = 0), mapping = aes(x = x)) +
+  stat_function(fun = function(x) {x}, color = "black") + 
+  xlim(-5, 5) + 
+  ylim(-10, 10) 
+```
+
+## Polynomials: quadratic
+
+```{r echo = F}
+ggplot(data = data.frame(x = 0), mapping = aes(x = x)) +
+  stat_function(fun = function(x) {x}, color = "black") + 
+  stat_function(fun = function(x) {x^2}, color = "red") +
+  xlim(-5, 5) + 
+  ylim(-10, 10) 
+```
+
+## Polynomials: cubic
+
+```{r echo = F}
+ggplot(data = data.frame(x = 0), mapping = aes(x = x)) +
+  stat_function(fun = function(x) {x}, color = "black") + 
+  stat_function(fun = function(x) {x^2}, color = "red") +
+  stat_function(fun = function(x) {x^3}, color = "blue") +
+  xlim(-5, 5) + 
+  ylim(-10, 10) 
+```
+
+## When do we want a polynomial?
+
+```{r echo = F}
+d2<-Howell1
+ggplot(d2, aes(x = weight, y = height)) + 
+  geom_point() + 
+  geom_smooth(method = "lm")
+```
+
+## Defining a model with a polynomial term
+
+$$h_i \sim \textsf{Normal}(\mu, \sigma)$$
+$$\mu = \alpha + \beta_1 x_i + \beta_2 x_i^2$$
+$$\alpha \sim \textsf{Normal}(0, 5)$$
+$$\beta_1 \sim \textsf{log-Normal}(0, 1)$$
+$$\beta_2 \sim \textsf{Normal}(0, 1)$$
+$$\sigma \sim \textsf{Exponential}(1)$$
+
+## Wait... what is a log-Normal distribution??
+
+```{r echo = F}
+pdat <- data.frame(lnorm = rlnorm(1e4, 0, 1),
+                   norm = rnorm(1e4, 0, 1))
+p1 <- ggplot(pdat,
+             aes(x = lnorm)) + 
+  geom_density() + 
+  labs(subtitle="x ~ log-Normal(0,1)") + 
+  coord_cartesian(xlim=c(0, 8))
+
+p2 <- ggplot(pdat,
+             aes(x = log(lnorm))) + 
+  geom_density() + 
+  labs(subtitle="log(x)")
+
+p3 <- ggplot(pdat,
+             aes(x = norm)) + 
+  geom_density() + 
+  labs(subtitle="y ~ Normal(0,1)")
+
+p4 <- ggplot(pdat,
+             aes(x = exp(norm))) + 
+  geom_density() + 
+  labs(subtitle="exp(y)")+ 
+  coord_cartesian(xlim=c(0, 8))
+
+(p1+p2)/(p3+p4)
+
+```
+
+## Wait what is an exponential distribution?
+
+```{r echo = F}
+x <- data.frame(x = seq(0, 10, length.out = 100))
+p1 <- ggplot(x, aes(x = x)) + 
+  stat_function(fun = function(x){dexp(x)}) + 
+  labs(subtitle = "PDF")
+p2 <- ggplot(x, aes(x = x)) + 
+  stat_function(fun = function(x){pexp(x)}) + 
+  labs(subtitle = "CDF")
+p1+p2
+```
+
+## Scaling variables
+
+Rescaling variables: $\frac{x_i - \bar{x}}{sd(x)}$ doesn't change the shape of a variable's distribution. Priors are easier to define and models easier to fit. It's a good default move. 
+
+```{r echo = F}
+p_original<-ggplot(d2, aes(x = weight)) + 
+  geom_density()
+p_scaled<-ggplot(d2, aes(x = scale(weight))) + 
+  geom_density()
+grid.arrange(p_original, p_scaled)
+```
+
+## Prior simulation
+
+```{r echo = T}
+prior_sims <- data.frame(
+  n_sim = 1:1e3,
+  a = rnorm(1e3, 0, 5), # intercept N(0,5)
+  b1 = rlnorm(1e3, 0, 1), # linear term logN(0,1)
+  b2 = rnorm(1e3, 0, 1), # quadratic term N(0,1)
+  sigma = rexp(1e3, 1)) # sigma exp(1)
+```
+
+## Prior simulation, linear predictor
+
+```{r}
+pred_dat <- expand_grid(
+  weight.c = seq(-2, 2, length.out=100), # define centered weight grid
+  n_sim = 1:1e3) |>  # for each simulation
+  left_join(prior_sims) # attach prior simulations
+# compute mu, simulate height
+pred_dat <- pred_dat |> 
+  mutate(mu = a + b1*weight.c + b2*weight.c^2)
+# what's inside?
+head(pred_dat)
+```
+
+## Prior simulation, linear predictor (50 sims)
+
+```{r echo = F}
+# draw 50 random samples for plotting
+sampled_sims <- sample(1:1e3, 50)
+pred_dat |> 
+  filter(n_sim %in% sampled_sims) |> 
+  ggplot(aes(x = weight.c, y = mu, group = n_sim)) + 
+  geom_line(alpha = 0.25)
+```
+
+## Prior predictive simulation
+
+```{r echo = F}
+# draw 50 random samples for plotting
+sampled_sims <- sample(1:1e3, 50)
+pred_dat |> 
+  filter(n_sim %in% sampled_sims) |> 
+  mutate(height = rnorm(mu, sigma)) |> 
+  ggplot(aes(x = weight.c, y = height, group = n_sim)) + 
+  geom_line(alpha = 0.25)
+```
+
+## Fitting the model 
+
+```{r cache = T, echo = T, message = F, warning = F, results = "hide"}
+d2<-d2 |> 
+  mutate(height.s = scale(height),
+         weight.s = scale(weight),
+         weight.s2 = scale(weight)^2)
+
+m_quadratic_priors <- c(
+  set_prior("normal(0,5)", class = "Intercept"),
+  set_prior("lognormal(0, 1)", class = "b", coef = "weight.s"), # this will throw a warning for zero boundary
+  set_prior("normal(0,1)", class = "b", coef = "weight.s2"),
+  set_prior("exponential(1)", class = "sigma"))
+
+m_quadratic <- brm(height.s ~ weight.s + weight.s2,
+                   prior = m_quadratic_priors,
+                   data = d2, 
+                   silent = 2)
+```
+
+## Summary 
+
+```{r}
+summary(m_quadratic)
+```
+
+## Evaluating the posterior for each parameter
+
+```{r}
+# easy mode
+plot(m_quadratic)
+```
+
+## Visualize the fit: mu
+
+```{r size = "tiny", fig.height = 3}
+sim_dat<-data.frame(weight.s = seq(-2.2, 2, length.out = nrow(d2))) |>
+  mutate(weight.s2 = weight.s^2) |> 
+  add_epred_draws(m_quadratic)
+
+ggplot(d2, 
+       aes(x = weight.s, y = height.s)) + 
+  stat_lineribbon(data = sim_dat,
+                  aes(x = weight.s, y = .epred)) + 
+  geom_point(alpha = 0.25) + 
+  scale_fill_brewer()
+```
+
+## Visualize posterior predictive fit
+
+```{r}
+sim_dat<-data.frame(weight.s = seq(-2.2, 2, length.out = nrow(d2))) |>
+  mutate(weight.s2 = weight.s^2) |> 
+  add_predicted_draws(m_quadratic)
+
+ggplot(d2, 
+       aes(x = weight.s, y = height.s)) + 
+  stat_lineribbon(data = sim_dat,
+                  aes(x = weight.s, y = .prediction)) + 
+  geom_point(alpha = 0.25) + 
+  scale_fill_brewer()
+```
+
+## Posterior predictive check, easy mode
+
+Could probably use the extra detail a cubic would get us, doesn't look great for children
+
+```{r}
+pp_check(m_quadratic)
+```
+
+## Fit a cubic model
+
+```{r cache = T, echo = T, message = F, warning = F, results = "hide"}
+d2<-d2 |> 
+  mutate(height.s = scale(height),
+         weight.s = scale(weight),
+         weight.s2 = scale(weight)^2,
+         weight.s3 = scale(weight)^3)
+
+m_cubic <- c(
+  set_prior("normal(0,5", class = "Intercept"),
+  set_prior("lognormal(0, 1)", class = "b", coef = "weight.s"), # this will throw a warning for zero boundary
+  set_prior("normal(0,1)", class = "b", coef = "weight.s2"),
+  set_prior("normal(0,1)", class = "b", coef = "weight.s3"),
+  set_prior("exponential(1)", class = "sigma"))
+
+m_cubic <- brm(height.s ~ weight.s + weight.s2 + weight.s3,
+               prior = m_quadratic_priors,
+               data = d2)
+```
+
+## Visualize posterior for mu
+
+```{r echo = F}
+sim_dat<-data.frame(weight.s = seq(-2.2, 2, length.out = nrow(d2))) |>
+  mutate(weight.s2 = weight.s^2,
+         weight.s3 = weight.s^3) |> 
+  add_epred_draws(m_cubic)
+
+ggplot(d2, 
+       aes(x = weight.s, y = height.s)) + 
+  stat_lineribbon(data = sim_dat,
+                  aes(x = weight.s, y = .epred)) + 
+  geom_point(alpha = 0.25) + 
+  scale_fill_brewer()
+```
+
+## Posterior predictive check
+
+```{r}
+pp_check(m_cubic)
+```
+
+# GAMs and splines
+
+## Motivation
+
+Sometimes it's reasonable to use polynomials, logs, or other non-linear transforms when we have good theory on the functional form of a relationship
+
+$$\textrm{E}(\textsf{crime}_i) = \beta_1 \cdot \textsf{age}_i + \beta_2 \cdot \textsf{age}^2_i$$
+
+. . . 
+
+But sometimes we don't have much theory about *how* variables relate to each other
+
+$$\textrm{E}(\textsf{Homicide}_t) = f(\textsf{inflation}_t)$$
+
+## Generalized additive models (GAMs)
+
+GAMs are very helpful when we want to *learn* about functional relationships from the data. 
+
+. . . 
+
+We change our linear model $\textrm{E}(y) = \alpha + \beta x$ into a more flexible model
+
+. . . 
+
+$$\textrm{E}(y) = \alpha + f(x)$$
+
+Where we will estimate $f$ when we fit the model
+
+## A simple example: Time and acceleration for motorcycle driver's head after crash (ouch!)
+
+```{r}
+data_motor <- MASS::mcycle |> 
+  tibble() |> 
+  unique()
+
+# plot the data
+data_motor |> 
+  ggplot(aes(x = times, y = accel)) +
+  geom_point()
+```
+
+*Note:* this section borrows liberally from https://michael-franke.github.io/Bayesian-Regression/practice-sheets/10b-GAMs.html 
+
+## So what does a GAM do? Basis functions as smoothers
+
+```{r echo = F}
+# create a set of /k/ splines for vector /x/
+get_basis <- function(x, k = 4){
+  # fit a dummy GAM
+  fit_gam <- mgcv::gam(
+    formula = y ~ s(times, bs = "cr", k = 4),
+    data    = tibble(y = 1, times = x))
+  # extract model matrix
+  model_matrix <- model.matrix(fit_gam)
+  # wrangle to long tibble
+  some_curves <- model_matrix |> 
+    as_tibble() |> 
+    mutate(x = x) |> 
+    pivot_longer(cols = -x) |> 
+    mutate(
+      name = str_replace(name, "s\\(times\\).", "function_"))
+  return(some_curves)
+}
+
+n_x = 1000
+x = seq(0,60, length.out = n_x)
+
+some_curves <- get_basis(x)
+
+# plot the basis
+some_curves |> 
+  filter(name!="(Intercept)") |> 
+  ggplot(aes(x = x, y = value, color = name, group = name)) +
+  geom_line(linewidth = 1, alpha = 0.75) + 
+  ylab("") + ggtitle("your basis") +
+  xlab("")
+```
+
+## With weights
+
+```{r echo = F}
+make_a_wiggle <- function(some_curves, weights, data = NULL) {
+  
+  your_wiggly_line <- some_curves |> 
+    mutate(
+      weight = rep(weights, n_x),
+      weighted_value = value * weight
+    ) |> 
+    group_by(x) |> 
+    summarize(wiggly_line = sum(weighted_value)) |> 
+    ungroup()
+  
+  your_wiggle_plot <- your_wiggly_line |> 
+    ggplot(aes(x = x, y = wiggly_line)) + 
+    geom_line() + 
+    xlab("x") + ylab("")
+  
+  your_wiggle_plot
+}
+
+p1 <- some_curves |> 
+  filter(name!="(Intercept)") |> 
+  ggplot(aes(x = x, y = value, color = name, group = name)) +
+  geom_line(linewidth = 1, alpha = 0.75) + 
+  ylab("") + 
+  xlab("") + 
+  theme(legend.position = "bottom") + 
+  labs(color = "Basis")
+weights <- c(0,1,1,1)
+p2 <- make_a_wiggle(some_curves, weights) + labs(subtitle = "equal weight (1, 1, 1)")
+weights <- c(0,2,1,1)
+p3 <- make_a_wiggle(some_curves, weights) + labs(subtitle = "weight (2, 1, 1)")
+weights <- c(0,1,2,1)
+p4 <- make_a_wiggle(some_curves, weights) + labs(subtitle = "weight (1, 2, 1)")
+weights <- c(0,1,1,2)
+p5 <- make_a_wiggle(some_curves, weights) + labs(subtitle = "weight (1, 1, 2)")
+
+p1|((p2+p3)/(p4+p5))
+```
+
+## Fitting the model (is very easy!), 3 basis functions
+
+```{r cache = T, message = F, warning = F, results = "hide"}
+# we'll discuss priors later in the semester, defaults for now
+m_gam <- brm(accel ~ s(times, k = 3),
+             data = data_motor)
+```
+
+## Fitting the model, 3 basis functions
+
+```{r echo = F}
+data_motor |> 
+  add_epred_draws(m_gam) |> 
+  ggplot(aes(x = times, y = .epred)) + 
+  stat_lineribbon() + 
+  geom_point(aes(y = accel)) + 
+  scale_fill_brewer()
+```
+
+## Fitting the model, 4 basis functions
+
+```{r echo = F, cache = T, message = F, warning = F, results = "hide"}
+# we'll discuss priors later in the semester, defaults for now
+m_gam <- brm(accel ~ s(times, k = 4),
+             data = data_motor)
+```
+
+```{r echo = F} 
+data_motor |> 
+  add_epred_draws(m_gam) |> 
+  ggplot(aes(x = times, y = .epred)) + 
+  stat_lineribbon() + 
+  geom_point(aes(y = accel)) + 
+  scale_fill_brewer()
+```
+
+## Fitting the model, 10 basis functions
+
+```{r echo = F, cache = T, message = F, warning = F, results = "hide"}
+# we'll discuss priors later in the semester, defaults for now
+m_gam <- brm(accel ~ s(times, k = 10),
+             data = data_motor)
+```
+
+```{r echo = F}
+data_motor |> 
+  add_epred_draws(m_gam) |> 
+  ggplot(aes(x = times, y = .epred)) + 
+  stat_lineribbon() + 
+  geom_point(aes(y = accel)) + 
+  scale_fill_brewer()
+```
+
+## GAM use cases
+
+- Spatial regression
+- Time series
+- Cases where we want a data-driven approach to deciding functional form
+- Fancier version of splines
+- Related to Gaussian Process (later!)
+
+# Interactions
+
+## Motivation for interactions
+
+- A linear model assumes that predictors are independent
+- It tells us about the expected relationship between X and Y, once we know Z  \pause
+- What if we think the relationship between X and Y varies based on Z?
+
+## Relationships between topography and a GDP
+
+- Countries with smoother terrain tend to have stronger economies. 
+- However, economies in Africa appear to benefit from rough terrain. 
+- This may be due to the protections that rugged terrain offered against the slave trade.
+
+## The data
+
+```{r}
+data(rugged)
+rugged <- rugged |> 
+  select(country, rugged, cont_africa, rgdppc_2000)
+head(rugged)
+```
+
+## Ruggedness and GDP inside and outside Africa: separate regressions
+
+```{r echo = F}
+ggplot(rugged |> filter(cont_africa==1), 
+       aes(x = rugged, y = log(rgdppc_2000))) + 
+  geom_point(color = "blue", alpha = 0.5) + 
+  geom_smooth(method = "lm",  color = "blue") + 
+  geom_point(data = rugged |> filter(cont_africa==0), 
+             aes(x = rugged, y = log(rgdppc_2000)),
+             color = "red", alpha = 0.5) + 
+  geom_smooth(data = rugged |> filter(cont_africa==0), 
+              aes(x = rugged, y = log(rgdppc_2000)),
+              method = "lm", color = "red") + 
+  coord_cartesian(xlim=c(0,7), ylim = c(6,11)) + 
+  labs(subtitle = "Red: non-African nation, Blue: African nation")
+```
+
+## Why log GDP?
+
+Logarithms convert data onto an (approximate) order of magnitude scale
+
+```{r echo = F}
+p1 <- rugged |> 
+  ggplot(aes(x = rgdppc_2000)) + 
+  geom_histogram()
+p2 <- rugged |> 
+  ggplot(aes(x = log(rgdppc_2000))) + 
+  geom_histogram()
+p1+p2
+```
+
+## Set up the data
+
+```{r}
+d<-rugged |> 
+  mutate(log_gdp = log(rgdppc_2000),
+         log_gdp_s = scale(log_gdp),
+         rugged_s = scale(rugged),
+         cont_africa = factor(cont_africa)) |> 
+  filter(!(is.na(log_gdp)))
+```
+
+## Propose a model
+
+$$\log(y_i) \sim \textrm{Normal}(\mu_i, \sigma)$$
+$$\mu_i = \alpha_{c} + \beta_c \cdot r_i$$
+$$\alpha_c \sim \textrm{Normal}(0, 1)$$
+$$\beta \sim \textrm{Normal}(0, 1)$$
+$$\sigma \sim \textrm{Exponential}(1)$$
+
+## Simulate from the prior
+
+```{r}
+n_sims <- 100
+prior_sim <- data.frame(n_sim = 1:n_sims,
+                        alpha = rnorm(n_sims, 0, 1),
+                        beta = rnorm(n_sims, 0, 1),
+                        sigma = rexp(n_sims, 1))
+### data grid
+plot_pred <- expand_grid(rugged_s = seq(-2, 2, length.out = 100),
+                         n_sim = 1:n_sims) |> 
+  left_join(prior_sim) |> 
+  mutate(mu = alpha + beta * rugged_s) |> 
+  mutate(y = rnorm(mu, sigma))
+```
+
+## Prior and prior predictive distributions
+
+```{r echo = F}
+p1 <- ggplot(plot_pred,
+       aes(x = rugged_s,
+           y = mu,
+           group = n_sim)) + 
+  geom_line(alpha = 0.5) + 
+  labs(subtitle = "Prior distribution of mu")
+p2 <- ggplot(plot_pred,
+       aes(x = rugged_s,
+           y = y,
+           group = n_sim)) + 
+  geom_line(alpha = 0.25) + 
+  labs(subtitle = "Prior predictive distribution of y")
+
+p1+p2
+```
+
+## Fit the model
+
+```{r results = "hide"}
+m_rugged1_prior <- c(
+  set_prior("normal(0,1)", class = "b"),
+  set_prior("exponential(1)", class = "sigma"))
+# -1 removes the intercept so we don't have double uncertainty on our two intercepts
+m_rugged1 <- brm(log_gdp_s ~ -1 + cont_africa + rugged_s,
+                 prior = m_rugged1_prior,
+                 data = d)
+```
+
+## What do model expectations look like?
+
+```{r}
+post_plot_dat <- expand_grid(rugged_s = unique(d$rugged_s),
+                             cont_africa = unique(d$cont_africa)) |> 
+  add_epred_draws(m_rugged1)
+
+ggplot(post_plot_dat,
+       aes(x = rugged_s, y = .epred, group = cont_africa, color = cont_africa)) + 
+  stat_lineribbon(alpha = 0.5) + 
+  scale_fill_brewer() + 
+  geom_point(data = d,
+             aes(x = rugged_s, y = log_gdp_s), alpha = 0.5)
+```
+
+## Model specification: adding an interaction
+
+Adding a slope for each group is easy:
+
+$$\mu = \alpha_{c} + \beta_{c} r_i$$ 
+
+This is the interaction: the slope of ruggedness now depends on continent.
+
+## Estimating the interaction model
+
+```{r results = "hide"}
+# our beta prior now covers both intercepts and slopes, class = "b" covers all predictors
+m_rugged2_prior <- c(
+  set_prior("normal(0,1)", class = "b"),
+  set_prior("exponential(1)", class = "sigma"))
+# -1 removes the intercept so we don't have double uncertainty on our two intercepts
+m_rugged2 <- brm(log_gdp_s ~ -1 + cont_africa * rugged_s,
+                 prior = m_rugged1_prior,
+                 data = d)
+```
+
+## Visualizing the interaction
+
+```{r echo = F}
+post_plot_dat <- expand_grid(rugged_s = unique(d$rugged_s),
+                             cont_africa = unique(d$cont_africa)) |> 
+  add_epred_draws(m_rugged2)
+ggplot(post_plot_dat,
+       aes(x = rugged_s, y = .epred, group = cont_africa, color = cont_africa)) + 
+  stat_lineribbon(alpha = 0.5) + 
+  scale_fill_brewer() + 
+  geom_point(data = d, aes(x = rugged_s, y = log_gdp_s, color = cont_africa), alpha = 0.5) + 
+  labs(x = "ruggedness", y = "log gdp (scaled)")
+```
+
+## Continuous interactions
+
+- We just estimated an interaction between a *categorical* variable and a *continuous variable* 
+- This results in $k$ slopes, where $k$ is the number of categories in the categorical variable
+- If we interact a continuous variable with another continuous variable we estimate an infinite number of slopes (!). 
+- Directly interpreting posterior parameter estimates is very difficult
+
+## The example data
+
+- Plant growth depends on light and water
+- If we've got light and no water, no growth
+- If we've got water and no light, no growth
+- How do tulip blooms vary as a function of shade and water?
+
+. . .
+
+```{r}
+data(tulips)
+head(tulips)
+```
+
+## Fitting a model without interactions for reference
+
+Our linear function and priors for this model will be:
+
+$$\mu = \alpha + \beta_w W_i + \beta_s S_i $$
+$$\alpha \sim \textrm{Normal}(0.5, 0.25)$$
+$$\beta \sim \textrm{Normal}(0, 0.25)$$
+$$\sigma \sim \textrm{Exponential}(1)$$
+
+## Fit the model
+
+```{r results = "hide", message = F, warning = F}
+d<-tulips |> 
+  mutate(blooms.s = blooms / max(blooms),
+         water.s = water - 2,
+         shade.s = shade - 2)
+
+tulip_prior <- c(set_prior("normal(0.5,0.25)", class = "Intercept"),
+                 set_prior("normal(0,0.25", class = "b"),
+                 set_prior("exponential(1)", class = "sigma"))
+
+tulip_0 <- brm(blooms.s ~ water.s + shade.s,
+               prior = tulip_prior,
+               data = d)
+```
+
+## Evaluate predictions
+
+```{r echo = F}
+# generate grid of values, add draws of linear predictor
+p1 <- plot_dat <- expand_grid(water.s = unique(d$water.s),
+            shade.s = unique(d$shade.s)) |> 
+  add_epred_draws(tulip_0) 
+# visualize water/blooms
+p1 <- ggplot(plot_dat,
+       aes(x = water.s, y = .epred)) + 
+  stat_lineribbon() + 
+  scale_fill_brewer() + 
+  labs(subtitle = "blooms by water, shade as facet") + 
+  facet_wrap(~shade.s, nrow = 1) 
+# visualize shade/blooms
+p2 <- ggplot(plot_dat,
+       aes(x = shade.s, y = .epred)) + 
+  stat_lineribbon() + 
+  scale_fill_brewer() + 
+  facet_wrap(~water.s, nrow = 1) + 
+  labs(subtitle = "blooms by shade, water as facet")
+
+p1/p2
+```
+
+
+## Add the interaction
+
+Interactions allow for the relationship between $B$ and $W$ to depend on $S$ (equivalently $B$ and $S$ depends on $W$).
+
+$$\mu = \alpha + \beta_wW_i + \beta_sS_i + \beta_{sw}W_iS_i$$
+
+```{r results = "hide"}
+# the 'b' prior will cover all betas as a vector
+tulip_prior <- c(set_prior("normal(0.5,0.25)", class = "Intercept"),
+                 set_prior("normal(0,0.25", class = "b"),
+                 set_prior("exponential(1)", class = "sigma"))
+
+tulip_1 <- brm(blooms.s ~ water.s * shade.s,
+               prior = tulip_prior,
+               data = d)
+```
+
+## Summary
+
+```{r size = "tiny"}
+tulip_1
+```
+
+This is very difficult to interpret... Don't try! Let's visualize instead.
+
+## The plan for a visual
+
+```{r}
+# full grid of water x shade, with linear predictor posterior samples
+plot_dat <- expand_grid(water.s = unique(d$water.s),
+            shade.s = unique(d$shade.s)) |> 
+  add_epred_draws(tulip_1) 
+# visualize water/blooms
+p1 <- ggplot(plot_dat,
+       aes(x = water.s, y = .epred)) + 
+  stat_lineribbon() + 
+  scale_fill_brewer() + 
+  labs(subtitle = "blooms by water, shade as facet") + 
+  facet_wrap(~shade.s, nrow = 1) 
+# visualize shade/blooms
+p2 <- ggplot(plot_dat,
+       aes(x = shade.s, y = .epred)) + 
+  stat_lineribbon() + 
+  scale_fill_brewer() + 
+  facet_wrap(~water.s, nrow = 1) + 
+  labs(subtitle = "blooms by shade, water as facet")
+```
+
+## Plotting it
+
+```{r}
+# the patchwork package is very convenient
+# first store plots as object, then arrange simply with + or /
+p1/p2
+```

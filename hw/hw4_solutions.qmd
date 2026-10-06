@@ -121,11 +121,20 @@ m4.3_revised <- brm(height ~ weight,
                     data = d, 
                     prior = priors)
 # take posterior samples
-posterior <- as_draws_df(m4.3_revised)
+posterior <- as_draws_df(m4.3)
 posterior_revised <- as_draws_df(m4.3_revised)
+
+ggplot(posterior,
+       aes(x = b_Intercept, y = b_weight)) + 
+  geom_point()
 # plot covariance of intercept and slope (scatterplot works)
 
 ggplot(posterior,
+       aes(x = b_Intercept, 
+           y = b_scaleweight)) + 
+  geom_point()
+
+ggplot(posterior_revised,
        aes(x = b_Intercept, 
            y = b_weight)) + 
   geom_point()
