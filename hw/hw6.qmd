@@ -1,0 +1,12 @@
+---
+title: "Advanced Stats. HW6"
+author: "Your Name Here!"
+format: pdf
+---
+
+Complete the following exercises in Rethinking
+
+5E1-5E4; 5H1, 5H2, 5H4
+
+Provide your homework as a rendered quarto document with all code included.
+

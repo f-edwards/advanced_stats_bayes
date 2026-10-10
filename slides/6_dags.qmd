@@ -1,0 +1,611 @@
+---
+title: "Structural causal models and multiple regression"
+author: "Frank Edwards"
+format: 
+  beamer:
+    theme: metropolis
+execute: 
+  echo: true
+knitr: 
+  opts_chunk:
+    warning: false
+    size: "tiny"
+    fig.align: "center"
+---
+
+```{r include = F}
+library(tidyverse)
+library(rethinking)
+library(brms)
+library(patchwork)
+library(dagitty)
+library(ggdag)
+library(tidybayes)
+data("Howell1")
+
+knitr::opts_chunk$set(tidy = FALSE)
+theme_set(theme_bw())
+def.chunk.hook  <- knitr::knit_hooks$get("chunk")
+knitr::knit_hooks$set(chunk = function(x, options) {
+  x <- def.chunk.hook(x, options)
+  ifelse(options$size != "normalsize", paste0("\\", options$size,"\n\n", x, "\n\n \\normalsize"), x)
+})
+knitr::opts_chunk$set(warning=FALSE, message=FALSE, tidy = F, size = "small")
+```
+
+# Introduction to causal inference with graphs
+
+## Causality isn't obvious in data
+
+```{r echo = F, fig.height = 4}
+d <- Howell1 |> 
+  filter(age>=18)
+ggplot(d, 
+       aes(x = height, y = weight, color = factor(male))) + 
+  geom_point(alpha = 0.5)
+```
+
+$$H \rightarrow W$$?
+$$W \rightarrow H$$?
+
+## Causality isn't obvious in data
+
+$$S \rightarrow W$$?
+$$W \rightarrow S$$?
+$$S \rightarrow H$$?
+$$H \rightarrow S$$?
+
+```{r echo = F, fig.height = 4}
+p1 <- ggplot(d, 
+             aes(x = height, fill = factor(male))) + 
+  geom_density(alpha = 0.5) + 
+  theme(legend.position = "bottom")
+p2 <- ggplot(d, 
+             aes(x = weight, fill = factor(male))) + 
+  geom_density(alpha = 0.5)+ 
+  theme(legend.position = "bottom")
+
+p1+p2
+```
+
+## Describing our estimands
+
+Estimands define the theoretical quantity we are interested in learning about. For this analysis, let's pick three: \pause
+
+- The average causal effect of height on weight \pause
+- The average total causal effect of sex on weight \pause
+- The average direct causal effect of sex on weight
+
+## Drawing our theory
+
+Height influences (*listens to*) weight. We draw an *edge* to connect the *nodes* H and W \pause
+
+```{r size = "tiny", fig.height = 4}
+dagW<-dagitty("dag{
+  H -> W
+}")
+
+ggdag(dagW, layout = "linear") + theme_dag()
+```
+
+## Drawing our theory
+
+Sex influences (*listens to*) height and weight 
+
+\pause
+
+We draw edges to connect S to H and W 
+
+```{r echo = F, fig.height = 4}
+dagW<-dagitty("dag{
+  H -> W
+  S -> W
+  S -> H
+}")
+
+ggdag(dagW) + theme_dag()
+```
+
+## Directed acyclic graphs
+
+- Reflect our scientific knowledge \pause
+- Is a *graph* consisting of nodes and edges \pause
+- Edges have a direction (arrow) \pause
+- Does not have any cycles (no closed loops) \pause
+- Nodes that are connected are *associated* (but functional form is not implied)
+
+## Family metaphor
+
+We sometimes use a family tree metaphor to describe DAGs
+
+```{r size = "tiny", fig.height = 2}
+dag1<-dagitty("dag{
+  x -> y
+  y -> z
+}")
+ggdag(dag1, layout = "linear") + theme_dag()
+```
+
+\pause
+
+- $z$ is a *descendant* of $x$ and $y$ \pause
+- $y$ and $x$ are *ancestors* of $z$ \pause
+- $y$ is a *parent* of $z$, and $z$ is a *child* of $x$
+
+## Family metaphor
+
+```{r size = "tiny", fig.height = 4}
+ggdag_ancestors(dag1, "z", layout = "linear") + theme_dag()
+```
+
+## Family metaphor
+
+```{r size = "tiny", fig.height = 4}
+ggdag_parents(dag1, "z", layout = "linear") + theme_dag()
+```
+
+## What it means (mathematically)
+
+1. $H = f(S)$
+2. $W = g(S, W)$
+
+```{r echo = F, fig.height = 4}
+dagW<-dagitty("dag{
+  H -> W
+  S -> W
+  S -> H
+  H[exposure]
+  W[outcome]
+}")
+ggdag(dagW) + theme_dag()
+```
+
+## Asking a causal question with a DAG
+
+What is the causal effect H on W?
+
+```{r echo = F, fig.height = 4}
+ggdag(dagW) + theme_dag()
+```
+
+## The backdoor criterion
+
+Information flows between connected nodes. To identify an effect, we need to close all *backdoor paths* between the outcome and the exposure. 
+
+```{r size = "tiny", fig.height = 4}
+ggdag_paths(dagW) + theme_dag()
+```
+
+## Closing backdoor paths
+
+We close backdoor paths by *controlling* for nodes along a backdoor path 
+
+```{r size = "tiny", fig.height = 4}
+ggdag_adjustment_set(dagW) + theme_dag()
+```
+
+## Unobserved influences (ignorable)
+
+```{r echo = F}
+dagU1<-dagitty("dag{
+  u1 -> H
+  u2 -> S
+  u3 -> W
+  H -> W
+  S -> W
+  S -> H
+  u1[latent]
+  u2[latent]
+  u3[latent]
+  W[outcome]
+  H[exposure]
+}")
+
+ggdag_adjustment_set(dagU1) + theme_dag()
+```
+
+## Unobserved influences (not ignorable)
+
+```{r echo = F}
+dagU2<-dagitty("dag{
+  u1 -> H
+  u2 -> W
+  u2 -> H
+  u3 -> W
+  H -> W
+  S -> W
+  S -> H
+  u1[latent]
+  u2[latent]
+  u3[latent]
+  W[outcome]
+  H[exposure]
+}")
+ggdag_adjustment_set(dagU2) + theme_dag()
+```
+
+## Closing backdoor paths with regression
+
+DAGs help us identify which variables to control. Simply close all backdoor paths through *conditioning* (controlling) to estimate $p(W|H, S=s)$
+
+```{r size = "tiny", results = "hide"}
+# identify minimal set of controls
+adjustmentSets(dagW)
+```
+
+```{r size = "tiny", results = "hide"}
+# set priors
+priors <- c(set_prior("normal(0,1)", class = "b"),
+            set_prior("exponential(1)", class = "sigma"))
+# fit model
+m_h <- brm(scale(weight) ~ -1 + # remove intercept
+             factor(male) + 
+             scale(height),
+           data = d)
+```
+
+## Posterior inference of an effect
+
+The mean posterior difference in average weight for a one standard deviation increase in height is easy to obtain, it is simply $\beta$.
+
+```{r size = "tiny", fig.height = 4}
+post <- as_draws_df(m_h)
+ggplot(post, aes(x = b_scaleheight)) + 
+  stat_slabinterval(.width = 0.95)
+```
+
+## Another estimand
+
+What is the causal effect of sex on weight?
+
+```{r echo = F, fig.height = 4}
+dagW_s<-dagitty("dag{
+  H -> W
+  S -> W
+  S -> H
+  W[outcome]
+  S[exposure]
+}")
+ggdag_paths_fan(dagW) + theme_dag()
+```
+
+The sum of *direct* and *indirect* effects is the *total effect*
+
+## The total effect
+
+```{r size = "tiny"}
+adjustmentSets(dagW_s)
+```
+
+No adjustment! Just estimate $p(W|S)$ directly with regression
+
+```{r size = "tiny", results = "hide"}
+m_s <- brm(scale(weight) ~ -1 + # remove intercept
+             factor(male),
+           prior = priors,
+           data = d)
+```
+
+## Posterior
+
+We use the posterior distribution to compute a difference; $E[W|S=male] - E[W|S=female]$
+
+```{r size = "tiny"}
+post <- data.frame(male = c(1,0)) |> add_epred_draws(m_s)
+post_m <- post |> filter(male==1) |> mutate(type = "M")
+post_f <- post |> filter(male==0) |> mutate(type = "F")
+diff <- post_m |> 
+  mutate(.epred = .epred - post_f$.epred) |> 
+  mutate(type = "Total effect")
+# plot
+pdat <- post_f |> 
+  bind_rows(post_m) |> 
+  bind_rows(diff) 
+```
+
+## Posterior density for parameters and causal effect
+
+```{r echo = F}
+ggplot(data = pdat, 
+       aes(x = .epred, fill = type)) + 
+  geom_density(alpha = 0.75) 
+```
+
+## Kinds of questions we can ask using a DAG: Direct vs total effects
+
+- What is the direct effect of a hypothetical manipulation of S on W, holding H constant $p(W|S, H=h)$
+
+```{r size = "tiny", fig.height = 4}
+adjustmentSets(dagW_s, effect = "direct")
+ggdag_adjust(dagW_s, var="H")
+```
+
+## Fitting the model
+
+```{r size = "tiny", results = "hide"}
+m_s_direct <- brm(scale(weight) ~ - 1 + # remove the intercept
+                    factor(male) + 
+                    scale(height), # control for height
+           prior = priors,
+           data = d)
+```
+
+## Regression as a decomposition of effect components
+
+Compute contrast again, then diff out from the total effect estimate (diff)
+
+```{r size = "tiny", fig.height = 4}
+# compute contrast
+post <- data.frame(male = c(1,0), height = mean(d$height)) |> 
+  add_epred_draws(m_s_direct)
+post_m <- post |> filter(male==1) |> mutate(type = "M")
+post_f <- post |> filter(male==0) |> mutate(type = "F")
+diff2 <- post_m |> 
+  mutate(.epred = .epred - post_f$.epred) |> 
+  mutate(type = "Indirect effect")
+# what share of the total effect of sex is a 'direct' effect?
+prop_direct <- diff2$.epred/diff$.epred
+# posterior median and 80% interval
+quantile(prop_direct, c(0.1, 0.5, 0.9))
+```
+
+## Visualize the posterior direct and total effect estimates (sex->height)
+
+```{r size = "tiny", fig.height = 4}
+diff |> 
+  bind_rows(diff2) |> 
+  ggplot(aes(x = .epred, fill = type)) + 
+  geom_density(alpha = 0.75)
+```
+
+# Multiple regression
+
+## Waffle house and divorce rates
+
+```{r echo = F}
+data("WaffleDivorce")
+ggplot(WaffleDivorce,
+       aes(x = WaffleHouses / Population,
+           y = Divorce,
+           label = Loc)) +
+  geom_text() +
+  geom_smooth(method = "lm") +
+  labs(y = "Divorce rate",
+       x = "Waffle Houses per capita")
+```
+
+## One potential causal theory
+
+```{r size = "tiny", fig.height = 4}
+dagWaffle <- dagify(D ~ W, outcome = "D")
+ggdag(dagWaffle) + theme_dag()
+```
+
+## A confounding fork
+
+```{r size = "tiny", fig.height = 4}
+dagWaffle <- dagify(D ~ S,
+                    W ~ S, outcome = "S")
+ggdag(dagWaffle) + theme_dag()
+```
+
+## Two theories for the causes of divorce rates
+
+M: Marriage rate, D: Divorce rate, A: Median age at marriage
+
+```{r size = "tiny", fig.height = 3}
+dagMarriage<-dagify(D~M, outcome = "D")
+p1 <- ggdag(dagMarriage) + theme_dag()
+dagAge <- dagify(D~A, outcome = "D")
+p2 <- ggdag(dagAge) + theme_dag()
+p1+p2
+```
+
+## An equivalent statement
+
+```{r size = "tiny", fig.height = 4}
+dagM <- dagify(D~M+A, outcome = "D")
+ggdag(dagM) + theme_dag()
+```
+
+## Propose a model for divorce rates with age at first marriage as a predictor
+
+$$ D_i \sim \textrm{Normal}(\mu_i, \sigma)$$
+$$ \mu_i = \alpha + \beta_A A_i $$
+$$ \alpha \sim \textrm{Normal}(0, 0.2) $$
+$$ \beta_A \sim \textrm{Normal}(0, 0.5) $$
+$$ \sigma \sim \textrm{Exponential} (1) $$
+
+## Load and scale variables
+
+Recall that scaling variables to $\bar{x} = 0, sd = 1$ makes defining priors and fitting complex models *much* easier.
+
+```{r echo = T}
+WaffleDivorce<- WaffleDivorce  |>
+  mutate(A = scale(MedianAgeMarriage),
+         D = scale(Divorce),
+         M = scale(Marriage))
+```
+
+## Fit the model(s)
+
+```{r results = "hide", size = "tiny", cache = T}
+priors <- c(
+  set_prior("normal(0, 1)", class = "Intercept"),
+  set_prior("normal(0, 1)", class = "b"),
+  set_prior("exponential(1)", class = "sigma")
+)
+# add sample_prior = T to include prior draws for us to peek at
+m_age <- brm(D ~ A,
+             prior = priors,
+             data = WaffleDivorce,
+             sample_prior = T,
+             silent = 2)
+
+m_marriage <- brm(D ~ M,
+                  prior = priors,
+                  data = WaffleDivorce,
+                  sample_prior = T,
+                  silent = 2)
+```
+
+## Evaluate the priors
+
+```{r size="tiny", fig.height = 3}
+# same priors on each model
+p <- prior_draws(m_age)
+ggplot(p,
+       aes(x = 0, y = 0)) +
+  geom_blank() +
+  geom_abline(aes(intercept = Intercept, slope = b), alpha = 0.1) +
+  coord_cartesian(xlim = c(-4, 4), ylim = c(-4, 4))
+```
+
+## Evaluate the posteriors
+
+```{r size = "tiny"}
+plot(m_age)
+```
+
+## Evaluate the posteriors
+
+```{r size = "tiny"}
+plot(m_marriage)
+```
+
+## Testable implications of the DAG
+
+```{r echo = F, fig.height = 3}
+ggdag(dagM) + theme_dag()
+impliedConditionalIndependencies(dagM)
+```
+
+$$A \not\perp D$$\pause
+$$M \not\perp D$$\pause
+$$M \perp A$$
+
+## Graphical check
+
+```{r echo = F}
+p1<-ggplot(WaffleDivorce,
+           aes(x = Marriage,
+               y = Divorce)) +
+  geom_point()+
+  geom_smooth(method = "lm") +
+  labs(x = "Marriage rate",
+       y = "Divorce rate")
+p2<-ggplot(WaffleDivorce,
+           aes(x = MedianAgeMarriage,
+               y = Divorce)) +
+  geom_point()+
+  geom_smooth(method = "lm")+
+  labs(x = "Median age at marriage",
+       y = "Divorce rate")
+p3 <- ggplot(WaffleDivorce,
+           aes(x = MedianAgeMarriage,
+               y = Marriage)) +
+  geom_point()+
+  geom_smooth(method = "lm")+
+  labs(x = "Median age at marriage",
+       y = "Marriage rate")
+p1+p2+p3
+```
+
+## Revise our model
+
+```{r size = "tiny", fig.height = 3}
+dagM <- dagify(D ~ A,
+               M ~ A, outcome = "D")
+ggdag(dagM) + theme_dag()
+impliedConditionalIndependencies(dagM)
+```
+
+This model says that divorce rates and marriage rates are independent of each other if we *stratify* by age at marriage.
+
+## Adding a second predictor
+
+$$D_i \sim Normal(\mu, \sigma)$$
+$$\mu_i = \alpha + \beta_MM_i + \beta_AA_i$$
+$$\alpha \sim Normal(0, 1)$$
+$$\beta \sim Normal(0, 1)$$
+$$\sigma \sim Exponential(1)$$
+
+## Fit the model
+
+```{r results = "hide"}
+m_both <- brm(D ~ A + M,
+              prior = priors, 
+              data = WaffleDivorce)
+```
+
+## Visualize the posterior
+
+```{r echo = F}
+plot(m_both)
+```
+
+## Two DAGs are compatible with this regression
+
+It is generally the case that many DAGs will be compatible with the same regression model
+
+```{r size = "tiny", fig.height = 4}
+dag1 <- dagify(D~A,
+               M~A, outcome = "D")
+dag2 <- dagify(D~A+M,
+                A~M, outcome = "D")
+p1 <- ggdag(dag1) + theme_dag()
+p2 <- ggdag(dag2) + theme_dag()
+p1+p2
+```
+
+## How to assess? 
+
+Look at model implications:
+
+```{r}
+impliedConditionalIndependencies(dag1)
+```
+
+```{r}
+impliedConditionalIndependencies(dag2)
+```
+
+Model 1 says A is independent of M, conditional on A. Model 2 says all measures are associated. 
+
+## Comparing results
+
+Model 1 says A is independent of M, conditional on A. Model 2 says all measures are associated. 
+
+```{r echo = F, fig.height = 4}
+# sample posteriors
+post_m_age <- as_draws_df(m_age) |>
+  mutate(model = "m_age")
+post_m_marriage <- as_draws_df(m_marriage) |>
+  mutate(model = "m_marriage")
+post_m_both <- as_draws_df(m_both) |>
+  mutate(model = "m_both")
+# format for plotting
+plot_dat <- bind_rows(post_m_age,
+                      post_m_marriage,
+                      post_m_both) |>
+  select(b_M, b_A, model) |>
+  pivot_longer(cols = b_M:b_A,
+               names_to = "parameter",
+               values_to = "post")
+## plot with stat_pointinterval from tidybayes
+ggplot(plot_dat,
+       aes(x = post, y = parameter)) +
+  stat_pointinterval(.width = 0.95) +
+  facet_wrap(~model, nrow = 3) +
+  geom_vline(xintercept = 0, lty = 2)
+```
+
+## Recommended reading
+
+![](https://bayes.cs.ucla.edu/PRIMER/primer-cover.jpg)
+
+## Recommended reading 
+
+![](https://images.routledge.com/common/jackets/amazon/978142007/9781420076165.jpg)
+
+And accompanying free EdX course (it's good!) https://harvardonline.harvard.edu/course/causal-diagrams-draw-your-assumptions-your-conclusions
