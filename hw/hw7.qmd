@@ -1,0 +1,11 @@
+---
+title: "Advanced Stats. HW7"
+author: "Your Name Here!"
+format: pdf
+---
+
+Complete the following exercises in Rethinking
+
+6E1-6E4; 6M2, 6M3; 6H3-6H6 (6H7 optional, it's a helpful, but difficult challenge)
+
+Provide your homework as a rendered quarto document with all code included.
