@@ -1,0 +1,857 @@
+---
+title: "Bias and confounding with DAGs"
+author: "Frank Edwards"
+format: 
+  beamer:
+    theme: metropolis
+execute: 
+  echo: true
+knitr: 
+  opts_chunk:
+    warning: false
+    size: "tiny"
+    fig.align: "center"
+---
+
+```{r include = F}
+library(tidyverse)
+library(rethinking)
+library(brms)
+library(patchwork)
+library(dagitty)
+library(ggdag)
+library(tidybayes)
+set.seed(1)
+
+knitr::opts_chunk$set(tidy = FALSE)
+theme_set(theme_dag())
+def.chunk.hook  <- knitr::knit_hooks$get("chunk")
+knitr::knit_hooks$set(chunk = function(x, options) {
+  x <- def.chunk.hook(x, options)
+  ifelse(options$size != "normalsize", paste0("\\", options$size,"\n\n", x, "\n\n \\normalsize"), x)
+})
+knitr::opts_chunk$set(warning=FALSE, message=FALSE, echo = F, size = "tiny")
+```
+
+## Four basic DAG structures
+
+Subsections of DAGs are composed of these four structures
+
+```{r fig.height = 5}
+pipe <- dagify(z ~ y, y ~ x)
+fork <- dagify(x~z, y~z)
+collider <- dagify(z~y+x)
+descendant <- dagify(z~x+y, d~z)
+
+p_pipe <- ggdag_classic(pipe) + labs(title = "pipe") 
+p_fork <- ggdag_classic(fork) + labs(title = "fork") 
+p_collider <- ggdag_classic(collider) + labs(title = "collider")
+p_descendant <- ggdag_classic(descendant) + labs(title = "descendant")
+
+(p_pipe + p_fork)/(p_collider + p_descendant)
+```
+
+## Basic features of the pipe
+
+A pipe is a case of *mediation*. The effect of $x$ on $z$ is indirect, through $y$. 
+
+```{r }
+ggdag(pipe, layout = "linear")
+```
+
+## Mediation explained
+
+Complete mediation: the entire effect of $x$ on $z$ is accounted for by $y$
+
+```{r}
+ggdag(pipe, layout = "linear")
+```
+
+Let's simulate this to see how it works
+
+```{r echo = T}
+x <- rnorm(1000, 0, 1)
+y <- rnorm(1000, x, 1)
+z <- rnorm(1000, y, 1)
+```
+
+## Mediation simulation
+
+```{r}
+pdat <- data.frame(x, y, z)
+p1 <- ggplot(pdat, aes(x = x, y = y)) + 
+  geom_point() + 
+  theme_bw()
+p2 <- ggplot(pdat, aes(x = x, y = z)) + 
+  geom_point() + 
+  theme_bw()
+p3 <- ggplot(pdat, aes(x = y, y = z)) + 
+  geom_point() + 
+  theme_bw()
+p1+p2+p3
+```
+
+## Let's evaluate two models
+
+I'll use default (flat) priors for convenience. Generally not a good idea.
+
+```{r, echo = T, results = "hide"}
+# Estimate model without conditioning on y
+m_1 <- brm(z~x, data = pdat)
+m_1_post <- as_draws_df(m_1) |> 
+  mutate(model = "z~x")
+# Estimate model conditioning on y
+m_2 <- brm(z~x+y, data = pdat)
+m_2_post <- as_draws_df(m_2) |> 
+  mutate(model = "z~x+y")
+```
+
+## Visualize
+
+```{r}
+m_1_post |> 
+  bind_rows(m_2_post) |> 
+  ggplot(aes(x = b_x, fill = model)) + 
+  geom_density() + 
+  theme_bw() + 
+  labs(title = "Posterior density of beta_x")
+```
+
+## What this means in DAG terms: d-connection
+
+The variables $x$ and $z$ are *d-connected* (direction) 
+
+```{r}
+pipe_full <- dagify(z ~ y, y ~ x, outcome = "z", exposure = "x")
+ggdag_dconnected(pipe_full, layout = "linear")
+```
+
+## What this means in DAG terms: d-separation
+
+If we condition on $y$, the path $x \rightarrow y \rightarrow z$ is blocked, and $x$ and $z$ become *d-separated*
+
+```{r}
+pipe_full <- dagify(z ~ y, y ~ x, outcome = "z", exposure = "x")
+ggdag_dseparated(pipe_full, layout = "linear", controlling_for = "y")
+```
+
+## Mediation and post-treatment bias
+
+Assume we are evaluating the effects of a CBT intervention $t$ on externalizing behaviors $b$. A colleague suggest we should control for depression $d$ in our analysis.
+
+Assume this DAG represents the process
+
+```{r}
+e1_dag <- dagify(b1~b0 + d, d~t)
+ggdag(e1_dag, layout = "linear")
+```
+
+## Simulation
+
+```{r}
+# baseline externalizing behaviors
+b0 <- rnorm(1000, 0, 1)
+# treatment assignment
+t <- rbinom(1000, 1, 0.5)
+# depression (affected by t)
+d <- rnorm(1000, -t, 1)
+# b1 affected by d and b0
+b1 <- rnorm(1000, b0+d, 1)
+e1_dat <- data.frame(b0, t, d, b1)
+```
+
+```{r results = "hide", echo = T}
+m_e1 <- brm(b1 ~ b0 + d + t, data = e1_dat)
+```
+
+## Let's see what happens when we follow the well-intentioned advice
+
+```{r results = "hide", echo = T}
+m_e1 <- brm(b1 ~ b0 + d + t, data = e1_dat)
+```
+
+```{r}
+fixef(m_e1)
+```
+
+## And when we don't
+
+```{r results = "hide", echo = T}
+m_e1_2 <- brm(b1 ~ b0 + t, data = e1_dat)
+```
+
+```{r}
+fixef(m_e1_2)
+```
+
+## A more realistic example
+
+```{r}
+e1_dag2 <- dagify(b1 ~ b0 + d1, 
+                  d1~t + d0, 
+                  outcome = "b1", 
+                  exposure = "t")
+ggdag(e1_dag2)
+```
+
+## Simulating
+
+```{r echo = T}
+n_sims <- 1000
+# baseline externalizing behaviors
+b0 <- rnorm(n_sims, 0, 1)
+# baseline depression
+d0 <- rnorm(n_sims)
+# treatment assignment
+t <- rbinom(n_sims, 1, 0.5)
+# depression t1 (affected by t)
+d1 <- rnorm(n_sims, d0 - t, 1)
+# b1 affected by d1 and b0
+b1 <- rnorm(n_sims, b0+d1, 1)
+edat <- data.frame(b0, d0, t, d1, b1)
+```
+
+## Fitting the models
+
+```{r results = "hide", echo = T}
+# fit model with pre-treatment depression
+m_e1_2_1 <- brm(b1~b0+d0+t, data = edat)
+# with both
+m_e1_2_2 <- brm(b1~b0+d0+d1+t, data = edat)
+# and without any
+m_e1_2_3 <- brm(b1~b0+t, data = edat)
+```
+
+## And compare posteriors
+
+```{r echo = T}
+fixef(m_e1_2_1)
+fixef(m_e1_2_2)
+fixef(m_e1_2_3)
+```
+
+## What's happening (DAG version)
+
+```{r}
+p1 <- ggdag_dseparated(e1_dag2, controlling_for = "d0")
+p2 <- ggdag_dseparated(e1_dag2, controlling_for = c("d0", "d1"))
+p3 <- ggdag_dseparated(e1_dag2)
+p1/p2/p3
+```
+
+## Forks
+
+A fork is the classic lemonade sales and homicide rates confounder: a common cause.
+
+```{r fig.height = 4}
+ggdag(fork)
+```
+
+## An example fork
+
+Waffle House and Divorce
+
+```{r fig.height = 4}
+waffle_dag <- dagify(D~A, W~S, A~S, outcome = "D", exposure = "W")
+ggdag(waffle_dag)
+```
+
+## D-separation in a fork
+
+```{r echo = T, fig.height = 4}
+adjustmentSets(waffle_dag)
+ggdag_dseparated(waffle_dag, from = "W")
+```
+
+## In action
+
+We'll prefer an adjustment for the variable closest to the outcome in the DAG for efficiency (reduced noise). 
+
+```{r results = "hide", echo = T}
+data("WaffleDivorce")
+mw1 <- brm(scale(Divorce) ~ scale(WaffleHouses/Population), 
+           data = WaffleDivorce)
+mw2 <- brm(scale(Divorce) ~ scale(WaffleHouses/Population) + 
+             scale(MedianAgeMarriage), 
+           data = WaffleDivorce)
+mw3 <- brm(scale(Divorce) ~ scale(WaffleHouses/Population) + 
+             factor(South), 
+           data = WaffleDivorce)
+mw4 <- brm(scale(Divorce) ~ scale(WaffleHouses/Population) + 
+             scale(MedianAgeMarriage) + factor(South), 
+           data = WaffleDivorce)
+```
+
+## In action: results
+
+If our DAG is correct, we expect to see a $W \not \perp D$ in mw1, $W \perp D|A$ in mw2, $W \perp D|S$ in mw3, and $W \perp D|S,A$ in mw 4. Note the impacts of collinearity
+
+```{r}
+fixef(mw1)
+fixef(mw2)
+fixef(mw3)
+fixef(mw4)
+```
+
+## The structure of a collider
+
+A *collider* is a node that has two arrows pointing into it. A collider *blocks* the flow of information between $x$ and $y$, unless we condition on it. The impact of colliders is similar to *selection bias*.
+
+```{r}
+ggdag(collider)
+```
+
+## A toy example
+
+Movie stars become famous for being conventionally attractive and/or being a good actor. Conventional attractiveness and acting talent are not associated with each other.
+
+```{r, fig.height = 4}
+dag_fame <- dagify(f~a+t, outcome = "f")
+ggdag(dag_fame)
+```
+
+## Simulate our example
+
+```{r}
+# sim attractiveness
+a <- rnorm(n_sims, 0, 1)
+# sim talent
+t <- rnorm(n_sims, 0, 1)
+# sim fame
+f <- rnorm(n_sims, a+t, 1)
+fame_sim <- data.frame(a, t, f)
+```
+
+## Visualize 
+
+```{r}
+p1 <- fame_sim |> 
+  ggplot(aes(x = t, y = f)) + 
+  geom_point(alpha = 0.5) + 
+  theme_bw()
+p2 <- fame_sim |> 
+  ggplot(aes(x = a, y = f)) + 
+  geom_point(alpha = 0.5) + 
+  theme_bw()
+p3 <- fame_sim |> 
+  ggplot(aes(x = a, y = t)) + 
+  geom_point(alpha = 0.5) + 
+  theme_bw()
+p1+p2+p3
+```
+
+## The impact of the selection process
+
+```{r}
+p1 <- fame_sim |> 
+  ggplot(aes(x = t, y = f, color = a)) + 
+  geom_point(alpha = 0.25) + 
+  geom_abline(slope = 1, lty = 2) + 
+  theme_bw() + 
+  scale_color_viridis_c()
+p2 <- fame_sim |> 
+  ggplot(aes(x = t, y = f, color = a>0)) + 
+  geom_point(alpha = 0.25) + 
+  geom_abline(slope = 1, lty = 2) + 
+  theme_bw() 
+p1+p2
+```
+
+## A more serious example: racism and police use of force
+
+We want to estimate the effect of race $r$ on police use of force $f$
+
+r: perceived race, u: officer perceptions of suspiciousness or danger, s: stop, f: force
+
+```{r, fig.height = 4}
+time_coords <- time_ordered_coords(list(
+  c("u","r"),
+  "s",
+  "f"
+))
+pol_dag <- dagify(f ~ s + u + r,
+                  s ~ u + r, 
+                  outcome = "f",
+                  exposure = "r",
+                  latent = "u",
+                  coords = time_coords) |> 
+  tidy_dagitty() |> 
+  mutate(observed = ifelse(name=="u", T, F))
+ggdag(pol_dag, edge_engine = "ggarrow") 
+```
+
+{\tiny for much more on this, see Knox, Dean, Will Lowe, and Jonathan Mummolo. 2020. “Administrative Records Mask Racially Biased Policing.” American Political Science Review 114 (3): 619–37. DOI: 10.1017/S0003055420000039.}
+
+## A more serious example: racism and police use of force
+
+The reality 
+
+r: perceived race, u: officer perceptions of suspiciousness or danger, s: stop, f: force
+
+```{r, fig.height = 4}
+ggdag(pol_dag, edge_engine = "ggarrow") + 
+  geom_dag_point(aes(color = observed)) + 
+  geom_dag_text() 
+```
+
+{\tiny Knox, Dean, Will Lowe, and Jonathan Mummolo. 2020. “Administrative Records Mask Racially Biased Policing.” American Political Science Review 114 (3): 619–37. DOI: 10.1017/S0003055420000039.}
+
+## Simulating the problem
+
+Assumptions: Empirical estimates suggest about a 1 in 10 rate of police traffic stops in the population and a 1 in 1000 rate of use of force. 
+
+```{r echo = T}
+n_sims <- 1e5
+# simulate race, 1 = black, US proportion is ~ 0.15
+r <- rbinom(n_sims, 1, 0.15)>0
+# simulate police suspicion with r->u
+u <- rnorm(n_sims, 0, 2)
+# simulate stop propensity with u->s, r->s
+s <- rnorm(n_sims, u + r, 2)
+# dichotomize with top decile as stops
+s <- s>quantile(s, 0.9)
+# simulate as propensity  u->f, 
+f <- rnorm(n_sims, u + r, 1)
+# condition on stop, then subset to top 1% of propensity
+f <- f>=quantile(f[s==1], 0.99)
+pol_sim_dat <- data.frame(r, s, f)
+```
+
+## Visualizing the simulated data
+
+```{r}
+pol_sim_dat |> 
+  group_by(r) |> 
+  summarize(p = n(), s = mean(s)*1e3, f = mean(f)*1e3)  |> 
+  pivot_longer(p:f) |> 
+  mutate(name = factor(name, levels = c("p", "s", "f"))) |> 
+  ggplot(aes(y = value, x = r)) + 
+  geom_col() + 
+  theme_bw() +
+  facet_wrap(~name, scales = "free") + 
+  labs(x="race=Black", 
+       subtitle = "p: total population, s: stops per 1,000 pop, f: force per 1,000 pop")
+```
+
+## Estimating a causal effect of race
+
+The collider $s$ blocks the backdoor path without adjustment. 
+
+```{r results = "hide", fig.height = 3}
+ggdag_adjustment_set(pol_dag, edge_engine = "ggarrow")
+```
+
+## Fitting the model
+
+```{r, results = "hide"}
+# estimate logit model
+m_pol0 <- brm(f~r, data = pol_sim_dat, family = "bernoulli")
+```
+
+## The problem: conditioning on a collider
+
+Most studies of police violence use administrative data for estimation, which are generally *only* collected after a stop. These studies are *conditioning* on $s$.
+
+```{r, fig.height = 4}
+ggdag_adjust(pol_dag, var = "s")
+```
+
+## What's happening here: no conditioning
+
+```{r}
+ggdag_paths(pol_dag, edge_engine = "ggarrow")
+```
+
+## What's happening here: conditioning on s
+
+```{r}
+ggdag_paths(pol_dag, adjust_for = "s", edge_engine = "ggarrow")
+```
+
+## Estimate the model: admin data example
+
+Here we'll only estimate the model for those who are stopped, in admin data we generally don't get information on those not stoped.
+
+```{r results = "hide", fig.height = 3, echo = T}
+m_pol1<- brm(f~r, data = pol_sim_dat |> 
+               filter(s==T), family = "bernoulli")
+```
+
+## Compare the posteriors: subset out those not stopped
+
+What's going on here?
+
+```{r}
+# samples posteriors
+post1 <- as_draws_df(m_pol0) |> mutate(model = "f | r")
+post2 <- as_draws_df(m_pol1) |> mutate(model = "f | r, s")
+# visualize
+p1 <- post1 |> 
+  bind_rows(post2) |> 
+  ggplot(aes(x = b_rTRUE, y = model)) + 
+  stat_slabinterval(.width=0.9) + 
+  theme_tidybayes() +
+  labs(x = "Log odds")
+
+p2 <- post1 |> 
+  bind_rows(post2) |> 
+  ggplot(aes(x = exp(b_rTRUE), y = model)) + 
+  stat_slabinterval(.width=0.9) + 
+  theme_tidybayes() + 
+  labs(x = "Odds ratio")
+
+p1+p2
+```
+
+## Estimate the model: 'controlling for arrest' example
+
+Reviewer 2 insists: "You must control for rates of arrest! Otherwise you've got omitted variable bias!"
+
+```{r results = "hide", fig.height = 3}
+# subset to only the data we generally observe, those that happen after stops
+m_pol2<- brm(f ~ r + s, data = pol_sim_dat, family = "bernoulli")
+```
+
+## Compare the posteriors: stops as a control
+
+```{r}
+# sample posteriors
+post1 <- as_draws_df(m_pol0) |> mutate(model = "f | r")
+post2 <- as_draws_df(m_pol2) |> mutate(model = "f | r, s")
+# visualize
+p1 <- post1 |> 
+  bind_rows(post2) |> 
+  ggplot(aes(x = b_rTRUE, y = model)) + 
+  stat_slabinterval(.width=0.9) + 
+  theme_tidybayes() +
+  labs(x = "Log odds")
+
+p2 <- post1 |> 
+  bind_rows(post2) |> 
+  ggplot(aes(x = exp(b_rTRUE), y = model)) + 
+  stat_slabinterval(.width=0.9) + 
+  theme_tidybayes() + 
+  labs(x = "Odds ratio")
+
+p1+p2
+```
+
+## Making the example more realistic
+
+Perhaps Reviewer 2 also says: "You have to control for whether the suspect was armed or violent! Include all the omitted variables!"
+
+Let's assume that both black and white suspects who are violent are always stopped, but Black suspects who are not violent are stopped at higher rates than white suspects. This is our revised DAG.
+
+```{r, fig.height = 4}
+time_coords <- time_ordered_coords(list(
+  c("u","v", "r"),
+  "s",
+  "f"
+))
+pol_dag2 <- dagify(f ~ s + u + r + curved(v),
+                   s ~ u + r + v, 
+                   outcome = "f",
+                   exposure = "r",
+                   latent = "u",
+                   coords = time_coords) 
+ggdag(pol_dag2, edge_engine = "ggarrow") 
+```
+
+## Simulating violence
+
+We'll now add the edges $v \rightarrow s$ and $v \rightarrow f$ to our simulation
+
+```{r}
+n_sims <- 1e5
+# simulate race, 1 = black, US proportion is ~ 0.15
+r <- rbinom(n_sims, 1, 0.15)>0
+# simulate police suspicion with r->u
+u <- rnorm(n_sims, 0, 1)
+## simulate violent behavior v
+v <- rbinom(n_sims, 1, 0.05)>0
+# simulate stop propensity with u->s, r->s, v->s, high weight on v
+s <- rnorm(n_sims, u + r + 2*v, 1)
+# dichotomize with top decile as stops
+s <- s>quantile(s, 0.9)
+# simulate as propensity  u->f, 
+f <- rnorm(n_sims, u + r + 2*v, 1)
+# condition on stop, then subset to top 1% of propensity
+f <- f>=quantile(f[s==1], 0.99)
+pol_sim_dat <- data.frame(r, s, v, f)
+```
+
+## Check the sims
+
+Violent suspects far more likely to be stopped, as expected
+
+```{r, results = "asis"}
+pol_sim_dat |> 
+  group_by(r, v) |> 
+  summarize(p = n(), s = mean(s)*1e3, f = mean(f)*1e3) |> 
+  knitr::kable(digits = 2)
+```
+
+## Conditioning on s 
+
+White suspects who are stopped are more violent on average under this scenario. They have a higher bar for police making a stop. 
+
+```{r echo = T}
+pol_sim_dat |> 
+  filter(s==1) |> 
+  group_by(r) |> 
+  summarize(v = mean(v)) |> 
+  knitr::kable(digits = 2)
+```
+
+## Fitting the models
+
+```{r results = "hide", echo = T}
+m_pol0 <- brm(f ~ r, data = pol_sim_dat, family = "bernoulli", cores=4)
+m_pol1 <- brm(f ~ r, data = pol_sim_dat |> 
+                filter(s==T), family = "bernoulli", cores=4)
+m_pol2<- brm(f ~ r + v, data = pol_sim_dat |> 
+               filter(s==T), family = "bernoulli", cores=4)
+```
+
+## Checking the posteriors
+
+```{r}
+# sample posteriors
+post1 <- as_draws_df(m_pol0) |> mutate(model = "f | r")
+post2 <- as_draws_df(m_pol1) |> mutate(model = "f | r, s")
+post3 <- as_draws_df(m_pol2) |> mutate(model = "f | r, s, v")
+# visualize
+p1 <- post1 |> 
+  bind_rows(post2) |> 
+  bind_rows(post3) |> 
+  ggplot(aes(x = b_rTRUE, y = model)) + 
+  stat_slabinterval(.width=0.9) + 
+  theme_tidybayes() +
+  labs(x = "Log odds")
+p1
+```
+
+## So which is correct?
+
+```{r}
+ggdag_adjustment_set(pol_dag2, edge_engine = "ggarrow")
+```
+
+## So which is correct?
+
+```{r}
+ggdag_adjust(pol_dag2, edge_engine = "ggarrow", var = c("s"))
+```
+
+## So which is correct?
+
+```{r}
+ggdag_adjust(pol_dag2, edge_engine = "ggarrow", var = c("s", "v"))
+```
+
+## The descendant
+
+```{r}
+descendant <- dagify(z~x+y, d~z, outcome = "d", exposure = "x")
+ggdag(descendant)
+```
+
+## Basic features
+
+- $d$ is a downstream consequence of $z$
+- variables like $d$ are often used as *proxies* for $z$
+- the consequences of adjustment depend on relations between ancestor nodes
+
+## Identifying the effect of x on d
+
+```{r}
+ggdag_adjustment_set(descendant)
+```
+
+## A bad control
+
+```{r}
+ggdag_adjust(descendant, var = "z")
+```
+
+## Under a different structure
+
+```{r}
+descendant <- dagify(z~x, d~z, y~z, outcome = "d", exposure = "x")
+ggdag(descendant)
+```
+
+## A control that is also bad but for another reason
+
+```{r}
+ggdag_adjust(descendant, var = "z")
+```
+
+## Measurement by proxy, a simulation
+
+Let's assume this dag. We want to measure the effect of $x$ on $d$. 
+
+```{r fig.height = 3}
+descendant <- dagify(z~x+y, d~z, outcome = "d", exposure = "x")
+ggdag(descendant)
+```
+
+```{r echo = T}
+# simulate descendant
+n_sims <- 1000
+x <- rnorm(n_sims, 0, 1)
+y <- rnorm(n_sims, 0, 1)
+z <- rnorm(n_sims, x+y, 1)
+d <- rnorm(n_sims, z, 1)
+simdat <- data.frame(x, y, z, d)
+```
+
+## Let's look at the paths
+
+To estimate the effect $x \rightarrow d$, we should *not* condition on $z$
+
+```{r fig.height = 4}
+ggdag_paths(descendant)
+```
+
+## Estimation
+
+```{r echo = T, results = "hide"}
+# correct model, no conditioning
+m_d0 <- brm(d~x, data = simdat)
+# adjusting for z, reviewer 2 told you to
+m_d1 <- brm(d~x + z, data = simdat)
+# adjusting for z and y, reviewer 3 told you to
+m_d2 <- brm(d~x + z + y, data = simdat)
+
+## extract posteriors
+postd0 <- as_draws_df(m_d0) |> mutate(model = "d|x")
+postd1 <- as_draws_df(m_d1) |> mutate(model = "d|x,z")
+postd2 <- as_draws_df(m_d1) |> mutate(model = "d|x,z,y")
+```
+
+## Posterior visualization
+
+```{r}
+# bind posteriors and plot densities
+postd0 |> 
+  bind_rows(postd1) |> 
+  bind_rows(postd2) |> 
+  ggplot(aes(x = b_x, y = model)) + 
+  stat_slabinterval() + 
+  theme_bw()
+```
+
+## The workflow
+
+1. Specify your DAG.
+2. List all of the paths connecting a cause of interest $x$ to an outcome $y$.
+3. Classify all paths as open or closed. A path is open unless it contains a collider.
+4. Identify all backdoor paths.
+5. If needed, choose variables to condition on to close backdoor paths.
+
+## A more realistic example 
+
+What paths are open between $r$ and $f$?
+
+```{r fig.height = 4}
+poldag3 <- dagitty("dag {
+  n -> s
+  n -> u
+  n -> v
+  r -> f
+  r -> n
+  r -> s
+  r -> u
+  s -> f
+  u -> f
+  u -> s
+  v -> f
+  v -> s
+  v -> u
+  f[outcome]
+  r[exposure]
+  }")
+ggdag(poldag3)
+```
+
+## What I've been told I look like when I draw these
+
+![](Charlies-Pepe-Silvia-conspiracy-in-Its-Always-Sunny.jpg)
+
+## Identifying the paths
+
+```{r}
+ggdag_paths(poldag3)
+```
+
+## Consequences of adjustment
+
+The DAG suggests we shouldn't adjust anything to obtain p(f|r)
+
+```{r echo = T}
+adjustmentSets(poldag3)
+```
+
+But reviewer 2 says include all the controls!
+
+## Bad controls: colliders
+
+```{r}
+ggdag_collider(poldag3)
+```
+
+## Bad controls: colliders
+
+```{r}
+ggdag_adjust(poldag3, var = "s")
+```
+
+## Bad controls: path blockers
+
+```{r}
+ggdag_adjust(poldag3, var = "n")
+```
+
+## Bad controls: path blockers
+
+```{r}
+ggdag_adjust(poldag3, var = "v")
+```
+
+## Estimating a 'direct' effect
+
+```{r}
+ggdag_adjust(poldag3, var = c("n", "v", "s"))
+```
+
+## Imagining an intervention: what would happen if we intervene on v?
+
+The 'do' operator helps us imagine the effects of interventions. We use it to delete arrows into a node. $p(f|r, do(v))$. Imagine we intervene on violence through community interventions, how would this affect the relationship between police violence and race?
+
+Let's assume this simple DAG
+
+```{r fig.height = 3}
+poldag4 <- dagitty("dag {
+  r->f
+  v->f
+  r->n
+  n->v
+  f[outcome]
+  r[exposure]
+  }") |> 
+  tidy_dagitty()
+ggdag(poldag4)
+```
+
+## do(v)
+
+We can use the do operator to signal intervention, $p(f|r, do(v))$ deleting arrows into $v$. Now the effect $r \rightarrow f$ does not pass through $n\rightarrow v$. We can generate this effect on the DAG by conditioning on $v$.
+
+```{r fig.height = 3}
+poldag5 <- poldag4
+poldag5$data[2,4:7] <- NA
+ggdag(poldag5)
+```
+
+

@@ -10,3 +10,66 @@ Complete the following exercises in Rethinking
 
 Provide your homework as a rendered quarto document with all code included.
 
+## 8E1
+
+1) In the presence of oxygen; probably won't work in a vacuum.
+2) In labor markets with abundant job opportunities, probably won't matter much in a place with few jobs.
+3) Conditional on the tires having adequate air in them.
+
+## 8E2
+
+I think it's only one, the others appear to be simply additive
+
+## 8E3
+
+(1) $c = h*d$
+(2) $v = c + i$
+(3) $b = p + f$
+(4) $i = s + a$
+
+## 8M1
+
+Sure - blooms depend on all three of water, shade, and temperature. No blooms will develop under heat, the interaction there must zero out b if h = hot.
+
+## 8H4
+
+```{r}
+library(rethinking)
+library(tidyverse)
+library(brms)
+data(nettle)
+
+# estimate language per pop
+nettle <- nettle |> 
+  mutate(lang.per.cap = num.lang/k.pop)
+```
+
+Our outcomes are on very different scales, so we'll center everything. We can use the vague $Normal(0,1)$ prior on the z scale. I'll use a wider prior on the intercept, and exponential prior on sigma.
+
+I'll estimate the models for A, B, and C in the same code chunk.
+
+```{r}
+priors <- c(set_prior("normal(0,1)", class = "b"),
+            set_prior("normal(0,2)", class = "Intercept"),
+            set_prior("exponential(1)", class = "sigma"))
+
+mA <- brm(scale(log(lang.per.cap)) ~ 
+            scale(log(area)) + scale(mean.growing.season), 
+          data = nettle,
+          prior = priors)
+
+mB <- brm(scale(log(lang.per.cap)) ~ 
+            scale(log(area)) + scale(sd.growing.season), 
+          data = nettle,
+          prior = priors)
+
+mC <- brm(scale(log(lang.per.cap)) ~ 
+            scale(log(area)) + 
+            scale(sd.growing.season)*scale(mean.growing.season), 
+          data = nettle,
+          prior = priors)
+```
+
+I'll suggest that area interacts with the variance of the growing season
+more uncertain growing season + smaller areas = higher linguistic diversity
+as the working hypothesis.

@@ -45,15 +45,15 @@ ggplot(d,
   geom_point(alpha = 0.5)
 ```
 
-$$H \rightarrow W$$?
-$$W \rightarrow H$$?
+$$H \rightarrow W$$
+$$W \rightarrow H$$
 
 ## Causality isn't obvious in data
 
-$$S \rightarrow W$$?
-$$W \rightarrow S$$?
-$$S \rightarrow H$$?
-$$H \rightarrow S$$?
+$$S \rightarrow W$$
+$$W \rightarrow S$$
+$$S \rightarrow H$$
+$$H \rightarrow S$$
 
 ```{r echo = F, fig.height = 4}
 p1 <- ggplot(d, 
@@ -280,7 +280,7 @@ adjustmentSets(dagW_s)
 No adjustment! Just estimate $p(W|S)$ directly with regression
 
 ```{r size = "tiny", results = "hide"}
-m_s <- brm(scale(weight) ~ -1 + # remove intercept
+m_s <- brm(scale(weight) ~  # remove intercept
              factor(male),
            prior = priors,
            data = d)
