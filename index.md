@@ -194,11 +194,9 @@ Reading: Rethinking Chapter 8
 
 Reading: Rethinking Chapter 5
 
-- 10/6: Structural causal models 1
-	- Introduction to DAGs
-	- Confounding 101
-	- Interpreting parameters under causal assumptions
-	- Interpreting parameters without causal assumptions
+- 10/6: Nonlinear linear regression
+	- Polynomial models
+	- GAMs and splines
 
 - HW 5: Due 10/11
 
@@ -208,12 +206,10 @@ Reading:
 
 - Rethinking Chapter 6
 
-- 10/13: Structural causal models 2
-	- Connecting theory to a causal graph
-	- Associations, interventions, counterfactuals
-	- Common structures in DAGs
-	- Structures leading to confounding
-	- Backdoor paths, d-separation, and identfying adjustment sets
+- 10/13: Structural causal models 1
+	- Introduction to DAGs
+	- Confounding 101
+	- Interpreting parameters under causal assumptions
 
 - HW 6: Due 10/18 
 
@@ -221,12 +217,12 @@ Reading:
 
 Reading: Rethinking Chapter 7
 
-- 10/20: Regularization and prior choice
-	- What are priors for? 
-	- Evaluating priors through simulation
-	- Why regularization is good
-	- Choosing informative priors
-	- Model comparison with LOO and WAIC
+- 10/20: Structural causal models 2
+	- Connecting theory to a causal graph
+	- Associations, interventions, counterfactuals
+	- Common structures in DAGs
+	- Structures leading to confounding
+	- Backdoor paths, d-separation, and identfying adjustment sets
 
 - HW 7: Due 10/25 
 
@@ -234,7 +230,20 @@ Reading: Rethinking Chapter 7
 
 Reading: Rethinking Chapter 9
 
-- 10/27: Markov Chain Monte Carlo
+- 10/27: Regularization and prior choice
+	- What are priors for? 
+	- Evaluating priors through simulation
+	- Why regularization is good
+	- Choosing informative priors
+	- Model comparison with LOO and WAIC
+
+- HW 8: Due 11/1 
+
+**Week 10** 
+
+Reading: Rethinking Chapters 10-12
+
+- 11/3 Markov Chain Monte Carlo
 	- Metropolis algorithm
 	- Gibbs sampling
 	- Hamiltonian Monte Carlo
@@ -242,28 +251,20 @@ Reading: Rethinking Chapter 9
 	- Diagnostics for convergence
 	- Troubleshooting convergence problems
 
-- HW 8: Due 11/1 
-
-**Week 10** 
-
-Reading: Rethinking Chapter 10
-
-- 11/3 GLMs
-	- Understanding generalized linear models and link functions
-	- Taxonomy of common distributions used for GLMs
-	- Link functions, parameters and prior choince
-
 - HW 9: Due 11/8 
 
 **Week 11** 
 
-Reading: Rethinking Chapters 11 (12 optional)
+Reading: Rethinking Chapter 13
 
-- 11/10: GLMs 2
+- 11/10: GLMs
+	- Understanding generalized linear models and link functions
+	- Taxonomy of common distributions used for GLMs
+	- Link functions, parameters and prior choince
 	- Bayesian logistic regression
 	- Bayesian Poisson models
 		- Other approaches for count data (negative binomial, zero-inflated)
-
+	
 - HW10: Due 11/15
 
 **Week 12** 

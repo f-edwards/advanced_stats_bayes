@@ -141,14 +141,14 @@ Assume we are evaluating the effects of a CBT intervention $t$ on externalizing 
 
 Assume this DAG represents the process
 
-```{r}
+```{r echo = F}
 e1_dag <- dagify(b1~b0 + d, d~t)
 ggdag(e1_dag, layout = "linear")
 ```
 
 ## Simulation
 
-```{r}
+```{r echo = T}
 # baseline externalizing behaviors
 b0 <- rnorm(1000, 0, 1)
 # treatment assignment
@@ -297,7 +297,7 @@ fixef(mw4)
 
 A *collider* is a node that has two arrows pointing into it. A collider *blocks* the flow of information between $x$ and $y$, unless we condition on it. The impact of colliders is similar to *selection bias*.
 
-```{r}
+```{r fig.height = 4}
 ggdag(collider)
 ```
 
@@ -443,7 +443,7 @@ ggdag_adjustment_set(pol_dag, edge_engine = "ggarrow")
 
 ## Fitting the model
 
-```{r, results = "hide"}
+```{r, results = "hide", echo = T}
 # estimate logit model
 m_pol0 <- brm(f~r, data = pol_sim_dat, family = "bernoulli")
 ```
