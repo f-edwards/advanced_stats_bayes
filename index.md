@@ -192,8 +192,6 @@ Reading: Rethinking Chapter 8
 
 **Week 6**
 
-Reading: Rethinking Chapter 5
-
 - 10/6: Nonlinear linear regression
 	- Polynomial models
 	- GAMs and splines
@@ -228,22 +226,10 @@ Reading: Rethinking Chapter 7
 
 **Week 9** 
 
-Reading: Rethinking Chapter 9
+Reading: Rethinking Chapters 7 and 9
 
-- 10/27: Regularization and prior choice
-	- What are priors for? 
-	- Evaluating priors through simulation
-	- Why regularization is good
-	- Choosing informative priors
+- 10/27: Fit measures, model comparison, MCMC
 	- Model comparison with LOO and WAIC
-
-- HW 8: Due 11/1 
-
-**Week 10** 
-
-Reading: Rethinking Chapters 10-12
-
-- 11/3 Markov Chain Monte Carlo
 	- Metropolis algorithm
 	- Gibbs sampling
 	- Hamiltonian Monte Carlo
@@ -251,19 +237,32 @@ Reading: Rethinking Chapters 10-12
 	- Diagnostics for convergence
 	- Troubleshooting convergence problems
 
-- HW 9: Due 11/8 
+- HW 8: Due 11/1 
 
-**Week 11** 
+**Week 10** 
 
-Reading: Rethinking Chapter 13
+Reading: Rethinking Chapters 10-11
 
-- 11/10: GLMs
+- 11/3: GLMs part 1
+
 	- Understanding generalized linear models and link functions
 	- Taxonomy of common distributions used for GLMs
 	- Link functions, parameters and prior choince
 	- Bayesian logistic regression
 	- Bayesian Poisson models
-		- Other approaches for count data (negative binomial, zero-inflated)
+		
+- HW 9: Due 11/8 
+
+**Week 11** 
+
+Reading: Rethinking Chapter 12 
+
+- 11/10: GLMs part 2
+
+	- Mixture models
+	- Overdispersion
+	- Zero inflation
+	- Categorical models
 	
 - HW10: Due 11/15
 

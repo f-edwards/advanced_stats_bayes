@@ -4,9 +4,95 @@ author: "Your Name Here!"
 format: pdf
 ---
 
+```{r include = F}
+library(tidyverse)
+library(rethinking)
+library(ggdag)
+library(brms)
+library(tidybayes)
+```
+
+
 Complete the following exercises in Rethinking
 
 5E1-5E4; 5H1, 5H2, 5H4
 
 Provide your homework as a rendered quarto document with all code included.
+
+## 5E1
+
+2 and 4 are clearly multiple regressions. 3 I think is a single regression because of the parameterization, but of course it's got two variables as inputs on the right hand side so I could see classifying it either way.
+
+## 5E2
+
+Where $ad$ is animal diversity, $lat$ is latitude, and $pd$ is plant diversity.
+
+$$E(ad_i) = \alpha + \beta_1 lat_i + pd_i$$
+
+## 5E3
+
+For student $i$, we suggest that lab funding $f$ and size $s$ jointly contribute to time to degree, and we expect these relationships to be negative.
+
+$$E(t_i) = \alpha + \beta_1 f_i + \beta_2 s_i$$
+
+## 5E4
+
+1, 2, 4 are definitely equivalent. 5 is really funky. I'm not completely sure what that would do, as for category A, we'd return a -2 there, which the model can estimate a value for. So I think it'd actually shake out the same as the others, but it's a weird way to do it!
+
+## 5H1
+
+Here's our DAG
+
+```{r}
+d1 <- dagify(d~a,
+             a~m)
+ggdag(d1) + theme_dag()
+```
+
+It suggests that $m\perp d | a$, which we can check with dagitty
+
+```{r}
+dagitty::impliedConditionalIndependencies(d1)
+```
+
+We can empirically check this with a visual and a regression.
+
+```{r}
+data("WaffleDivorce")
+ggplot(WaffleDivorce,
+       aes(x = Marriage, y = Divorce)) + 
+  geom_point()
+```
+
+Looks like an unconditional linear association, which is what we'd expect with the DAG.
+
+```{r, results = "hide"}
+m1 <- brm(Divorce~ Marriage + MedianAgeMarriage,
+          data = WaffleDivorce)
+```
+
+Looks like a pretty clear indpendence.
+
+```{r}
+m1_post <- as_draws_df(m1)
+ggplot(m1_post,
+       aes(x = b_Marriage)) + 
+  stat_slabinterval()
+```
+
+Yeah, lots of posterior mass centered at zero. We could push this further and evaluate the density of the parameter under an unconditional model, but the visual already tells us there's an association there at a bivariate level. This evidence is consistent with the pipe DAG m->a->d
+
+## 5H2
+
+Here, we'll estimate a multivariate model for $a$ and $m$ to simulate the dependencies
+
+```{r, results = "hide"}
+# use bf to specify a model with two response variables
+# vignette here: https://paulbuerkner.com/brms/articles/brms_multivariate.html
+
+m2_d <- bf(Divorce ~ Marriage + MedianAgeMarriage)
+m2_a <- bf(MedianAgeMarriage ~ Marriage)
+m2 <- brm(m2_a+m2_d, data = WaffleDivorce)
+summary(m2)
+```
 

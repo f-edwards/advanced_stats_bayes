@@ -1,0 +1,761 @@
+---
+title: "Model comparison, intro to MCMC"
+author: "Frank Edwards"
+format: 
+  beamer:
+    theme: metropolis
+execute: 
+  echo: true
+knitr: 
+  opts_chunk:
+    warning: false
+    size: "tiny"
+    fig.align: "center"
+---
+
+```{r setup, include=FALSE}
+library(rethinking)
+library(dagitty)
+library(gridExtra)
+library(tidyverse)
+library(patchwork)
+library(brms)
+set.seed(1)
+
+knitr::opts_chunk$set(tidy = FALSE)
+theme_set(theme_bw())
+def.chunk.hook  <- knitr::knit_hooks$get("chunk")
+knitr::knit_hooks$set(chunk = function(x, options) {
+  x <- def.chunk.hook(x, options)
+  ifelse(options$size != "normalsize", paste0("\\", options$size,"\n\n", x, "\n\n \\normalsize"), x)
+})
+knitr::opts_chunk$set(warning=FALSE, message=FALSE, tidy = F, size = "small")
+```
+
+## How to assess a model
+
+**If our goal is causal inference**
+
+1. Construct causal theories (DAGs)
+2. Determine testable implications of model 
+3. Evaluate, critique, refine
+
+**If our goal is prediction**
+
+1. Establish what we'd like to predict
+2. Estimate competing models
+3. Compare with metric of accuracy / fit
+
+## Data for today
+
+```{r fig.height = 3}
+data(mtcars)
+ggplot(mtcars, aes(x = wt, y = mpg)) + 
+  geom_point()
+```
+
+## The most common measure of model fit: $R^2$
+
+$$R^2 = \frac{var(\textrm{outcome}) - var(\textrm{residuals})}{var(\textrm{outcome})}$$
+
+$$R^2 = 1 - \frac{var(\textrm{residuals})}{var(\textrm{outcome})}$$
+
+## $R^2$ in action
+
+```{r zize = "tiny"}
+m1<-quap(alist(
+  mpg ~ dnorm(mu, sigma),
+  mu<-a + bW * wt,
+  a ~ dnorm(0, 10),
+  bW ~ dnorm(0, 5),
+  sigma ~ dexp(1)
+  ), data = mtcars)
+```
+
+```{r echo = F}
+d<-mtcars
+R2_is_bad<-function(quap_fit){
+  s<-sim(quap_fit, refresh=0)
+  r<-apply(s,2,mean) - d$mpg
+  1-var2(r)/var2(d$mpg)
+}
+R2_is_bad(m1)
+```
+
+$R^2$ tells us how much of the variance in the outcome variable is predictable based on the included predictor variable(s). Here: we can predict `r round(R2_is_bad(m1), 2) * 100` percent of the observed variance in $mpg$ after knowing $wt$
+
+## Let's work with a sample of the data
+
+```{r size = "tiny"}
+car_sample<-mtcars %>% 
+  sample_n(10)
+
+d<-car_sample
+```
+
+For the linear model with weight as a predictor, $R^2 = $
+
+```{r echo = F}
+m1<-lm(mpg ~ wt, data = d)
+
+summary(m1)$r.squared
+```
+
+## Can we improve the fit?
+
+Yes! Let's use this linear function:
+
+$$\mu = \alpha + \beta_1 W + \beta_2W^2$$
+
+$R^2 = $
+
+```{r echo = F}
+m2<-lm(mpg ~ wt + I(wt^2), data = d)
+
+summary(m2)$r.squared
+```
+
+## Can we improve the fit?
+
+Yes!
+
+$$\mu = \alpha + \beta_1 W + \beta_2W^2 + \beta_3W^3$$
+
+$R^2 = $
+
+```{r echo = F}
+m3<-lm(mpg ~ wt + I(wt^2) + I(wt^3), data = d)
+
+summary(m3)$r.squared
+```
+
+## Can we improve the fit?
+
+Yes!
+
+$$\mu = \alpha + \beta_1 W + \beta_2W^2 + \beta_3W^3 + \beta_4W^4$$
+
+$R^2 = $
+
+```{r echo = F}
+m4<-lm(mpg ~ wt + I(wt^2) + I(wt^3) + I(wt^4), data = d)
+
+summary(m4)$r.squared
+```
+
+## Can we improve the fit?
+
+Yes!
+
+$$\mu = \alpha + \beta_1 W + \beta_2W^2 + \beta_3W^3 + \beta_4W^4 +  \beta_5W^5 +  \beta_6W^6$$
+
+$R^2 = $
+
+```{r echo = F}
+m5<-lm(mpg ~ wt + I(wt^2) + I(wt^3) + I(wt^4) +
+         + I(wt^5) + I(wt^6) + I(wt^6), data = d)
+
+summary(m5)$r.squared
+```
+
+## Compare these fits
+
+```{r echo = F}
+plot_dat<-data.frame(model = rep(c("m1", "m2", "m3", "m4", "m5"), 
+                                 each = 10),
+
+                     mpg = rep(d$mpg, 5),
+                     wt = rep(d$wt, 5))
+ggplot(plot_dat, aes(x = wt, y = mpg)) + 
+  geom_point(size = 2) + 
+  geom_smooth(method = "lm", formula = y ~ poly(x, 1), se = FALSE, color = 1) + 
+  coord_cartesian(ylim = c(10, 34))
+```
+
+## Compare these fits
+
+```{r echo = F}
+plot_dat<-data.frame(model = rep(c("m1", "m2", "m3", "m4", "m5"), 
+                                 each = 10),
+
+                     mpg = rep(d$mpg, 5),
+                     wt = rep(d$wt, 5))
+ggplot(plot_dat, aes(x = wt, y = mpg)) + 
+  geom_point(size = 2) + 
+  geom_smooth(method = "lm", formula = y ~ poly(x, 1), se = FALSE, color = 1) + 
+  geom_smooth(method = "lm", formula = y ~ poly(x, 2), se = FALSE, color = 2) + 
+  coord_cartesian(ylim = c(10, 34))
+```
+
+## Compare these fits
+
+```{r echo = F}
+plot_dat<-data.frame(model = rep(c("m1", "m2", "m3", "m4", "m5"), 
+                                 each = 10),
+
+                     mpg = rep(d$mpg, 5),
+                     wt = rep(d$wt, 5))
+ggplot(plot_dat, aes(x = wt, y = mpg)) + 
+  geom_point(size = 2) + 
+  geom_smooth(method = "lm", formula = y ~ poly(x, 1), se = FALSE, color = 1) + 
+  geom_smooth(method = "lm", formula = y ~ poly(x, 2), se = FALSE, color = 2) + 
+  geom_smooth(method = "lm", formula = y ~ poly(x, 3), se = FALSE, color = 3) + 
+  coord_cartesian(ylim = c(10, 34))
+```
+
+## Compare these fits
+
+```{r echo = F}
+plot_dat<-data.frame(model = rep(c("m1", "m2", "m3", "m4", "m5"), 
+                                 each = 10),
+
+                     mpg = rep(d$mpg, 5),
+                     wt = rep(d$wt, 5))
+ggplot(plot_dat, aes(x = wt, y = mpg)) + 
+  geom_point(size = 2) + 
+  geom_smooth(method = "lm", formula = y ~ poly(x, 1), se = FALSE, color = 1) + 
+  geom_smooth(method = "lm", formula = y ~ poly(x, 2), se = FALSE, color = 2) + 
+  geom_smooth(method = "lm", formula = y ~ poly(x, 3), se = FALSE, color = 3) + 
+  geom_smooth(method = "lm", formula = y ~ poly(x, 4), se = FALSE, color = 4) + 
+  coord_cartesian(ylim = c(10, 34))
+```
+
+## Compare these fits
+
+```{r echo = F}
+plot_dat<-data.frame(model = rep(c("m1", "m2", "m3", "m4", "m5"), 
+                                 each = 10),
+
+                     mpg = rep(d$mpg, 5),
+                     wt = rep(d$wt, 5))
+ggplot(plot_dat, aes(x = wt, y = mpg)) + 
+  geom_point(size = 2) + 
+  geom_smooth(method = "lm", formula = y ~ poly(x, 1), se = FALSE, color = 1) + 
+  geom_smooth(method = "lm", formula = y ~ poly(x, 2), se = FALSE, color = 2) + 
+  geom_smooth(method = "lm", formula = y ~ poly(x, 3), se = FALSE, color = 3) + 
+  geom_smooth(method = "lm", formula = y ~ poly(x, 4), se = FALSE, color = 4) + 
+  geom_smooth(method = "lm", formula = y ~ poly(x, 5), se = FALSE, color = 5) + 
+  coord_cartesian(ylim = c(10, 34))
+```
+
+
+## Compare these fits
+
+```{r echo = F}
+plot_dat<-data.frame(model = rep(c("m1", "m2", "m3", "m4", "m5"), 
+                                 each = 10),
+
+                     mpg = rep(d$mpg, 5),
+                     wt = rep(d$wt, 5))
+ggplot(plot_dat, aes(x = wt, y = mpg)) + 
+  geom_point(size = 2) + 
+  geom_smooth(method = "lm", formula = y ~ poly(x, 1), se = FALSE, color = 1) + 
+  geom_smooth(method = "lm", formula = y ~ poly(x, 2), se = FALSE, color = 2) + 
+  geom_smooth(method = "lm", formula = y ~ poly(x, 3), se = FALSE, color = 3) + 
+  geom_smooth(method = "lm", formula = y ~ poly(x, 4), se = FALSE, color = 4) + 
+  geom_smooth(method = "lm", formula = y ~ poly(x, 5), se = FALSE, color = 5) + 
+  geom_smooth(method = "lm", formula = y ~ poly(x, 6), se = FALSE, color = 6) + 
+  coord_cartesian(ylim = c(10, 34))
+```
+
+## Compare these fits
+
+```{r echo = F}
+plot_dat<-data.frame(model = rep(c("m1", "m2", "m3", "m4", "m5"), 
+                                 each = 10),
+
+                     mpg = rep(d$mpg, 5),
+                     wt = rep(d$wt, 5))
+ggplot(plot_dat, aes(x = wt, y = mpg)) + 
+  geom_point(size = 2) + 
+  geom_smooth(method = "lm", formula = y ~ poly(x, 1), se = FALSE, color = 1) + 
+  geom_smooth(method = "lm", formula = y ~ poly(x, 2), se = FALSE, color = 2) + 
+  geom_smooth(method = "lm", formula = y ~ poly(x, 3), se = FALSE, color = 3) + 
+  geom_smooth(method = "lm", formula = y ~ poly(x, 4), se = FALSE, color = 4) + 
+  geom_smooth(method = "lm", formula = y ~ poly(x, 5), se = FALSE, color = 5) + 
+  geom_smooth(method = "lm", formula = y ~ poly(x, 6), se = FALSE, color = 6) + 
+  geom_smooth(method = "lm", formula = y ~ poly(x, 7), se = FALSE, color = 7) + 
+  coord_cartesian(ylim = c(10, 34))
+```
+
+## Overfitting and underfitting
+
+- Adding complexity will improve goodness-of-fit measures like $R^2$
+- But goodness-of-fit doesn't mean that we've modeled the process well, just that we've fit our *sample* well
+- Adding too few parameters though can mean we aren't learning enough from the data
+- *Goal:* balance model complexity with predictive accuracy
+
+# How to address overfitting
+
+## Regularizing priors
+
+```{r echo = F}
+plot_dat<-data.frame(x = seq(-3, 3, 0.01)) %>% 
+  mutate(p1 = dnorm(x, 0, 1), 
+         p2 = dnorm(x, 0, 0.5),
+         p3 = dnorm(x, 0, 0.2))
+
+ggplot(plot_dat, aes(x)) + 
+  geom_line(aes(y = p3), lty = 1) +
+  geom_line(aes(y = p2), lty = 2) + 
+  geom_line(aes(y = p1), lty = 3)  +
+  labs(subtitle = "N(0, 1) dotted, N(0, 0.5) dashed, N(0, 0.2) solid")
+```
+
+## Use these priors to fit our polynomial model
+
+```{r size = "tiny"}
+m0<-quap(alist(
+  mpg ~ dnorm(mu, sigma),
+  mu<-a + b * wt + b1 * wt^2 + b2 * wt^3 + b3 * wt^3 + b4 * wt^4,
+  a ~ dnorm(0, 10),
+  b ~ dnorm(0, 10),
+  b1 ~ dnorm(0, 10),
+  b2 ~ dnorm(0, 10),
+  b3 ~ dnorm(0, 10),
+  b4 ~ dnorm(0, 10),
+  sigma ~ dexp(1)
+), data = mtcars)
+
+mReg<-quap(alist(
+  mpg ~ dnorm(mu, sigma),
+  mu<-a + b * wt + b1 * wt^2 + b2 * wt^3 + b3 * wt^3 + b4 * wt^4,
+  a ~ dnorm(0, 1),
+  b ~ dnorm(0, 1),
+  b1 ~ dnorm(0, 1),
+  b2 ~ dnorm(0, 1),
+  b3 ~ dnorm(0, 1),
+  b4 ~ dnorm(0, 1),
+  sigma ~ dexp(1)
+), data = mtcars)
+```
+
+## Narrower priors constrain overfitting
+
+These priors force the model to learn less from the data. Flat priors allow the posterior to overfit the data.
+
+```{r size = "tiny", fig.height = 4}
+plot(coeftab(m0, mReg))
+```
+
+# Methods for comparing models
+
+## How well can we predict cases that we didn't use to fit the model?
+
+**Out of sample prediction** is a general set of methods that evaluate how well a model performs at predicting new cases. 
+
+In general, we'd like to know how well our model predicts *new* observations, because it is easy to overfit on observed data.
+
+## Training and test methods
+
+Let's partition the data into two equal sets: a *training* sample that we'll use to fit the model, and a *test* sample that we'll use to evaluate predictive accuracy
+
+We'll extend this later to a general approach: *leave-one-out cross-validation*
+
+## Checking the fit for our 6 degree polynomial model
+
+```{r echo = F}
+set.seed(1)
+index<-sample(1:nrow(mtcars), 16)
+training<-mtcars %>% slice(index)
+test<-mtcars %>% slice(-index)
+m0<-lm(mpg ~ wt + I(wt^2) + I(wt^3) + I(wt^4) + I(wt^5) + I(wt^6), data = training)
+mu<-predict(m0)
+
+ggplot(training, aes(x = wt, y = mpg)) + 
+  geom_point(size = 1, alpha = 0.5) + 
+  geom_line(aes(y = mu)) + 
+  coord_cartesian(ylim = c(10, 34), xlim = c(1, 6))
+
+```
+
+## Checking the fit for each of the models: compare to test data
+
+```{r echo = F}
+mu<-predict(m0, newdata = test)
+
+ggplot(training, aes(x = wt, y = mpg)) + 
+  geom_point(size = 1, alpha = 0.5) + 
+  geom_point(data = test, aes(x = wt, y = mpg), size = 3) + 
+  geom_line(aes(y = mu, x = test$wt)) + 
+  coord_cartesian(ylim = c(10, 34), xlim = c(1, 6))
+
+```
+
+## Checking the fit for each of the models: compare to test data, less complex model
+
+```{r echo = F}
+
+m1<-lm(mpg ~ wt + I(wt^2), data = training)
+mu<-predict(m1, newdata = test)
+
+ggplot(training, aes(x = wt, y = mpg)) + 
+  geom_point(size = 1, alpha = 0.5) + 
+  geom_point(data = test, aes(x = wt, y = mpg), size = 3) + 
+  geom_line(aes(y = mu, x = test$wt)) + 
+  coord_cartesian(ylim = c(10, 34), xlim = c(1, 6))
+```
+
+## Leave-one-out cross validation
+
+1. Define a model
+2. Estimate the model, holding the first observation out
+3. Predict the value for the held out observation, estimate prediction error
+4. Repeat with 2:n observations
+5. Average the error across each iteration
+
+## Leave-one-out cross validation
+
+```{r echo = F}
+ggplot(training %>% slice(-1),
+       aes(x = wt, y = mpg)) + 
+  geom_point() + 
+  geom_smooth(method = "lm") + 
+  geom_point(data = training %>% slice(1), 
+             aes(x = wt, y = mpg), color = "red")+ 
+    coord_cartesian(ylim=c(10,37), xlim=c(1, 5))
+```
+
+## Leave-one-out cross validation
+
+```{r echo = F}
+ggplot(training %>% slice(-2),
+       aes(x = wt, y = mpg)) + 
+  geom_point() + 
+  geom_smooth(method = "lm") + 
+  geom_point(data = training %>% slice(2), 
+             aes(x = wt, y = mpg), color = "red")+ 
+    coord_cartesian(ylim=c(10,37), xlim=c(1, 5))
+```
+
+## Leave-one-out cross validation
+
+```{r echo = F}
+ggplot(training %>% slice(-3),
+       aes(x = wt, y = mpg)) + 
+  geom_point() + 
+  geom_smooth(method = "lm") + 
+  geom_point(data = training %>% slice(3), 
+             aes(x = wt, y = mpg), color = "red")+ 
+    coord_cartesian(ylim=c(10,37), xlim=c(1, 5))
+```
+
+## Leave-one-out cross validation
+
+```{r echo = F}
+ggplot(training %>% slice(-4),
+       aes(x = wt, y = mpg)) + 
+  geom_point() + 
+  geom_smooth(method = "lm") + 
+  geom_point(data = training %>% slice(4), 
+             aes(x = wt, y = mpg), color = "red")+ 
+    coord_cartesian(ylim=c(10,37), xlim=c(1, 5))
+```
+
+## Leave-one-out cross validation
+
+```{r echo = F}
+ggplot(training %>% slice(-5),
+       aes(x = wt, y = mpg)) + 
+  geom_point() + 
+  geom_smooth(method = "lm") + 
+  geom_point(data = training %>% slice(5), 
+             aes(x = wt, y = mpg), color = "red")+ 
+    coord_cartesian(ylim=c(10,37), xlim=c(1, 5))
+```
+
+## Leave-one-out cross validation
+
+```{r echo = F}
+ggplot(training %>% slice(-6),
+       aes(x = wt, y = mpg)) + 
+  geom_point() + 
+  geom_smooth(method = "lm") + 
+  geom_point(data = training %>% slice(6), 
+             aes(x = wt, y = mpg), color = "red")+ 
+    coord_cartesian(ylim=c(10,37), xlim=c(1, 5))
+```
+
+## Leave-one-out cross validation
+
+```{r echo = F}
+ggplot(training %>% slice(-7),
+       aes(x = wt, y = mpg)) + 
+  geom_point() + 
+  geom_smooth(method = "lm") + 
+  geom_point(data = training %>% slice(7), 
+             aes(x = wt, y = mpg), color = "red") + 
+    coord_cartesian(ylim=c(10,37), xlim=c(1, 5))
+```
+
+## Leave-one-out cross validation
+
+```{r echo = F}
+ggplot(training %>% slice(-8),
+       aes(x = wt, y = mpg)) + 
+  geom_point() + 
+  geom_smooth(method = "lm") + 
+  geom_point(data = training %>% slice(8), 
+             aes(x = wt, y = mpg), color = "red") + 
+  coord_cartesian(ylim=c(10,37), xlim=c(1, 5))
+```
+
+## Leave-one-out cross validation
+
+```{r echo = F}
+ggplot(training %>% slice(-9),
+       aes(x = wt, y = mpg)) + 
+  geom_point() + 
+  geom_smooth(method = "lm") + 
+  geom_point(data = training %>% slice(9), 
+             aes(x = wt, y = mpg), color = "red") + 
+  coord_cartesian(ylim=c(10,37), xlim=c(1, 5))
+```
+
+## Leave-one-out cross validation
+
+```{r echo = F}
+ggplot(training %>% slice(-10),
+       aes(x = wt, y = mpg)) + 
+  geom_point() + 
+  geom_smooth(method = "lm") + 
+  geom_point(data = training %>% slice(10), 
+             aes(x = wt, y = mpg), color = "red") + 
+  coord_cartesian(ylim=c(10,37), xlim=c(1, 5))
+```
+
+## Implenting LOO-CV in R
+
+```{r cache = T}
+cv_quap(mReg)
+```
+
+PSIS provides an approximation of LOO-CV that is more computationally efficient
+
+```{r}
+PSIS(mReg)
+```
+
+# Model comparison using cross validation and information criteria
+
+## General approach
+
+This approach is appropriate for comparing the estimated *predictive* accuracy of models. It is not appropriate for causal inference.
+
+1. Estimate competing models
+2. Compute the indicator of interest
+3. Evaluate relative model predictive performance
+
+## Return to the plant fungus experiment
+
+From the prior lecture and chapter 6: we conduct an experiment on the effect of an antifungal agent on plant growth. Conditioning on the presence of fungus confounds the relationship between the treatment and plant growth.
+
+- fungus_0 is an intercept only model
+- fungus_1 includes the treatment as a predictor
+- fungus_2 includes both the treatment and fungus as a predictor
+
+```{r echo = F}
+N<-100
+d<-data.frame(h0=rnorm(N, 10, 2), # generate initial height
+              treatment = rep(c(0,1), each = N/2)) # random assignment to treatment
+
+d<-d %>% 
+  mutate(fungus = rbinom(N, size = 1, prob = 0.5 - treatment * 0.4), # p(fungus) is lower for treated
+         h1 = h0 + rnorm(N, 5-3 * fungus, 1))
+
+fungus_0<-quap(alist(
+  h1 ~ dnorm(mu, sigma),
+  mu<- h0 * p,
+  p<- a + bt * treatment,
+  a ~ dlnorm(0, 0.25),
+  bt ~ dnorm(0, 0.5),
+  sigma ~ dexp(1)
+), data = d)
+
+fungus_1<-quap(alist(
+  h1 ~ dnorm(mu, sigma),
+  mu<- h0 * p,
+  p<- a + bt * treatment,
+  a ~ dlnorm(0, 0.25),
+  bt ~ dnorm(0, 0.5),
+  sigma ~ dexp(1)
+), data = d)
+
+fungus_2<-quap(alist(
+  h1 ~ dnorm(mu, sigma),
+  mu<- h0 * p,
+  p<- a + bt * treatment + bf * fungus,
+  a ~ dlnorm(0, 0.25),
+  bt ~ dnorm(0, 0.5),
+  bf ~ dnorm(0, 0.5),
+  sigma ~ dexp(1)
+), data = d)
+```
+
+## Compare these models using an information criterion
+
+Information criteria compute an expected out-of-sample predictive score. AIC and BIC are routinely used, but better approaches now exist. We'll use WAIC (widely applicable information criteria). 
+
+In general, information criteria have two components:
+
+$$IC = \textrm{log probability of model} - \textrm{penalty term}$$
+
+The penalty term (crudely) penalizes models for additional complexity. For two models with the same fit (log probability), the IC will prefer the less complex model
+
+## Comparing model fits with WAIC
+
+```{r}
+compare(fungus_0, fungus_1, fungus_2)
+```
+
+- fungus_2 has the lowest WAIC score. This means that it is expected to predict new cases with the highest accuracy.
+- The difference in WAIC between fungus_2 and fungus_1 is large and meaningful
+- Note the dSE (difference standard error) value relative to dWAIC (the difference in WAIC between the lowest scoring model and all others) \pause
+- Information criteria don't care about causation!
+
+## Comparing model fits with PSIS
+
+PSIS is an approximation of the LOO-CV method. It will warn you when there are influential observations that may bias the PSIS estimate. See 7.5.2 for a detailed example of how to address this using *robust regression*.
+
+```{r}
+compare(fungus_0, fungus_1, fungus_2, func = PSIS)
+```
+
+## Markov Chain Monte Carlo and model estimation
+
+## To start: maximum likelihood estimation
+
+Conventional (frequentist) statistics usually uses MLE as its estimation engine. The basic logic is to solve for the value of a parameter under which the data is most likely.
+
+## For a binomial random variable
+
+Let's simulate to see how it works. 
+
+$$y \sim N(0, 1)$$
+
+```{r echo = T}
+# take 1000 draws
+y <- rnorm(1000, 0, 1)
+```
+
+## What probability distributions could have given rise to the data?
+
+Let's evaluate three candidate models: $y\sim N(-2, 1)$, $y\sim N(0, 1)$, and $y\sim N(2,1)$
+
+```{r}
+# compute the probability density for each observation in y
+# under the candidate distribution
+candidate1 <- dnorm(y, -2, 1)
+candidate2 <- dnorm(y, 0, 1)
+candidate3 <- dnorm(y, 2, 1)
+pdat <- data.frame(candidate1, candidate2, candidate3)
+```
+
+## The likelihood of each observation under each distribution
+
+```{r echo = F}
+p1 <- ggplot(pdat, aes(x = candidate1)) + geom_histogram() + labs(subtitle = "N(-2,1)")
+p2 <- ggplot(pdat, aes(x = candidate2)) + geom_histogram() + labs(subtitle = "N(0,1)")
+p3 <- ggplot(pdat, aes(x = candidate3)) + geom_histogram() + labs(subtitle = "N(2,1)")
+p1+p2+p3
+```
+
+## The log-likelihood
+
+We can compute the logarithm of the joint likelihood of the data under each candidate model, then sum it up to get a relative plausibility
+
+```{r}
+sum(log(candidate1))
+sum(log(candidate2))
+sum(log(candidate3))
+```
+
+The most likely candidate has the largest log likelihood.
+
+## Limits of MLE
+
+MLE works well for simple problems, but sometimes we don't know the exact shape of a candidate distribution, or want to estimate really complex models. For that, we can use MCMC
+
+## MCMC in action
+
+We often don't know the exact shape of the posterior, so may not have a great idea for how to sample candidate distributions. 
+
+Recall $p(\theta|y) \propto p(y|\theta)p(\theta)$
+
+Read as the posterior is proportional to the product of the likelihood and the prior. 
+
+## Let's poke around with a few MCMC algorithms
+
+- Metropolis Hastings is the original
+- Gibbs is a widely used improvement
+- Stan uses Hamiltonian MC
+
+Here's a good demo:
+https://chi-feng.github.io/mcmc-demo/
+
+## Lab
+
+- Simulate 10 x~N(20,10), then simulate 10 y~N(x, 20). 
+- Fit a linear model y~x with flat priors mu~dunif(-10000, 10000), sigma ~dunif(0, 1000), use only 100 iterations
+- Inspect the traceplots
+
+## Lab
+
+- Simulate 10 x~N(20,10), then simulate 10 y~N(x, 20). 
+```{r}
+x <- rnorm(5, 20, 10)
+y <- rnorm(10, x, 20)
+z <- x+y
+dat <- data.frame(y, x, z)
+```
+
+- Fit a linear model y~x with flat priors beta~dunif(-10000, 10000), sigma ~dunif(0, 1000), use only 100 iterations
+
+```{r}
+m0 <- brm(y~ x + z, 
+          prior = c(set_prior("uniform(-10000, 10000)", class = "b"),
+                    set_prior("uniform(0, 1000)", class = "sigma")),
+          iter = 100,
+          data = dat)
+```
+
+- Inspect the traceplots
+
+```{r}
+# plot the parameter draw against iteration by chain
+post <- as_draws_df(m0)
+ggplot(post, aes(x = .iteration, y = b_x, color = factor(.chain))) + 
+  geom_line()
+```
+
+## Lab
+
+- Fit a linear model y~x with weakly informative priors beta~dnorm(0, 10), sigma ~dexp(1), use only 100 iterations
+
+```{r}
+m0 <- brm(y~ x + z, 
+          prior = c(set_prior("normal(0,10)", class = "b"),
+                    set_prior("exponential(1)", class = "sigma")),
+          iter = 100,
+          data = dat)
+```
+
+- Inspect the traceplots
+
+```{r}
+plot(m0)
+```
+
+No amount of tweaking can save it
+
+## Lab: waffledivorce
+
+Let's break brms: 
+
+Fit a linear model divorce ~ Marriage * MedianAgeMarriage * South * WaffleHouses/Population
+
+```{r}
+data("WaffleDivorce")
+mw <- brm(Divorce ~ Marriage * MedianAgeMarriage * South * I(WaffleHouses/Population), data = WaffleDivorce)
+```
+

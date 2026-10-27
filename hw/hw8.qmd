@@ -1,0 +1,7 @@
+---
+  title: "Advanced Stats. HW8"
+author: "Your Name Here!"
+format: pdf
+---
+
+Complete rethinking practice exercises: 7M1-7M6, 7H1, 7H2
