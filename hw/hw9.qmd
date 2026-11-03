@@ -1,0 +1,24 @@
+---
+title: "Advanced Stats HW9"
+author: "Frank Edwards"
+format: pdf
+---
+
+For this homework, use titanic.csv in ./hw/data/titanic.csv
+
+The data contains the following variables:
+
+- Survived: a binary indicating survival
+- Pclass: a categorical indicating passenger class (first being the most expensive)
+- Name: the passenger's name
+- Sex: the passenger's sex (character)
+- Age: the passenger's age
+- Siblings/Spouses Aboard: an integer with how many sibs/spouses a passenger had aboard
+- Parents/Children Aboard: an integer with how many parents or children a passenger had aboard
+- Fare: The cost of the passenger's ticket
+
+For this homework, you will provide an analysis of why some passengers died on the Titanic while others survived. Use any of the included measures, and specify any model that you think is appropriate. Provide an appropriate description and exploration of the data, an explanation of your theoretical approach (DAGs may be helpful for thinking about causation), a description and justification for your model, and summaries and visualizations of any statistical models estimated.
+
+Based on your empirical inspection of your model, you may choose to revise your initial modeling decisions. Feel free to use WAIC or LOO-CV for this purpose, or prioritize theoretical concerns as you revise.
+
+Provide me with adequate written detail to follow your reasoning, and enough information to support your claims. Conclude with a theoretically motivated and empirically informed statement about who was likely to die and who was likely to survive on the Titanic. 

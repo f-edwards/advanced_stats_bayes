@@ -1,0 +1,782 @@
+---
+title: "Generalized linear models, Bayesian flavors"
+author: "Frank Edwards"
+format: 
+  beamer:
+    theme: metropolis
+execute: 
+  echo: true
+knitr: 
+  opts_chunk:
+    warning: false
+    size: "tiny"
+    fig.align: "center"
+---
+
+```{r setup, include=FALSE}
+library(rethinking)
+library(dagitty)
+library(gridExtra)
+library(tidyverse)
+library(patchwork)
+library(brms)
+library(tidybayes)
+set.seed(1)
+
+knitr::opts_chunk$set(tidy = FALSE)
+theme_set(theme_bw())
+def.chunk.hook  <- knitr::knit_hooks$get("chunk")
+knitr::knit_hooks$set(chunk = function(x, options) {
+  x <- def.chunk.hook(x, options)
+  ifelse(options$size != "normalsize", paste0("\\", options$size,"\n\n", x, "\n\n \\normalsize"), x)
+})
+knitr::opts_chunk$set(warning=FALSE, message=FALSE, tidy = F, size = "small")
+```
+
+## The components of a model
+
+- Likelihood of the data (the small-world data generator): *e.g.* $y \sim Normal(\mu, \sigma)$
+- The linear function (converts likelihood parameters to linear combinations of predictors): *e.g.* $\mu = \alpha + \beta x$
+- Priors (our initial beliefs about plausible parameter values) *e.g.*:
+
+$$\alpha \sim Normal(0, 1)$$
+$$\beta \sim Normal(0, 0.5)$$
+$$\sigma \sim Exp(1)$$
+
+## Limits of the Normal model
+
+There's no reason we must be constrained to the Normal (Gaussian) likelihood for data: 
+
+$$ y \sim Normal(\mu, \sigma) $$
+
+While powerful, the Normal distribution forces us into assumptions that may not suit our data. 
+
+*Maximum entropy* can guide likelihood selection. Which model meets the constraints of the data while maximizing the number of ways a distribution could have arisen?
+
+## Limits of the Normal model
+
+**What if our outcome is binary, and we wish to model probability?** 
+
+- Nothing constrains a model to the [0,1] probability scale
+
+## Limits of the Normal model
+
+**What if our outcome is an event count?** 
+
+- The continuous normal likelihood will predict on a real number scale, inappropriate for non-negative integers (births, deaths, books read, unemployment filings, infections, etc)
+
+## Limits of the Normal model
+
+**What if our outcome is categorical?** 
+
+- The continuous normal model doesn't easily model categorical outcomes (favorite brand of soda, choice of college major)
+
+## Generalizing the linear model
+
+A likelihood can take the following general form
+
+$$\textrm{outcome} \sim \textrm{Probability distribution}(\textrm{parameter})$$
+
+But we generally want to include predictor variables in our model that may help to explain variation in the outcome. That's why we include a *linear predictor* with the following general form
+
+$$\textrm{parameter} = \textrm{intercept} + \textrm{slope} \times \textrm{predictor}$$
+
+## Mapping a linear predictor to any parameter scale
+
+What if we want to map our linear predictions to some other scale like probability [0,1]? \pause
+
+## The link function
+
+We can use a link function $g$ to transform our linear predictor from a continuous linear scale to any other scale. The general form is:
+
+$$g(\textrm{parameter}) = \textrm{intercept} + \textrm{slope} \times \textrm{predictor}$$ \pause
+
+or: 
+
+$$\textrm{parameter} = g^{-1}(\textrm{intercept} + \textrm{slope} \times \textrm{predictor})$$
+
+## Diverse likelihood functions
+
+- Continuous outcome: the Normal distribution 
+- Continuous non-negative outcome: the exponential distribution 
+- Continuous non-negative outcome with mode above zero: the Gamma distribution 
+- Binary outcome: the binomial distribution 
+- Categorical outcome: the multinomial distribution 
+- Count outcome: the Poisson distribution 
+
+## Common probability distributions used in GLMs
+
+```{r echo = F}
+plot_dat<-data.frame(x = c(rnorm(1e5, 0, 1),
+                           rexp(1e5, 1),
+                           rgamma(1e5, 3, 1),
+                           rbinom(1e5, 10, 0.7),
+                           rpois(1e5, 3)),
+                     Model = rep(c("Normal(0,1)", 
+                                   "Exponential(1)",
+                                   "Gamma(3,1)",
+                                   "Binomial(10, 0.5)",
+                                   "Poisson(3)"),
+                                 each = 1e5))
+
+ggplot(plot_dat, aes(x = x)) + 
+  geom_histogram(bins = 100) + 
+  facet_wrap(~Model, scales = "free")
+```
+
+## Read in grad school admissions data
+
+```{r size = "scriptsize"}
+admissions <- read_csv("https://stats.idre.ucla.edu/stat/data/binary.csv")
+head(admissions)
+nrow(admissions)
+```
+
+## Evaluate distribution of binary admission variable
+
+```{r fig.height = 4}
+admissions |> 
+  group_by(admit) |> 
+  summarize(n = n()) |> 
+  mutate(prop = n/sum(n))
+```
+
+## How do GRE scores relate to admission?
+
+Let's consider the linear regression model, where GRE_s is a mean-centered SD scaled GRE score, so a 1 is one unit above the mean:
+
+$$admit_i \sim Normal(\mu, \sigma)$$
+$$\mu = \alpha + \beta \times \textrm{GRE}$$
+$$\alpha \sim N(0.5, 1)$$
+$$\beta \sim N(0, 1)$$
+$$\sigma \sim Exp(1)$$
+
+Because this is a Normal likelihood with a binary outcome, we call it a *linear probability model*.
+
+## Fit the model using MCMC
+
+```{r size = "scriptsize", results='hide'}
+### DON'T use PERIODS in VARIABLE names for Stan
+### I have done it 5 times already...
+d<-admissions |> 
+  mutate(gre_s = scale(gre)) |> 
+  select(admit, gre_s)
+
+d<-as.data.frame(d)
+
+priors <- c(set_prior("normal(0.5, 1)", class = "Intercept"),
+            set_prior("normal(0,1)", class = "b"),
+            set_prior("exponential(1)", class = "sigma"))
+
+m0 <- brm(admit ~ gre_s,
+          data = d,
+          prior = priors,
+          cores = 4)
+```
+
+## Checking convergence diagnostics
+
+```{r size = "tiny", fig.height = 3}
+plot(m0)
+```
+
+## Evaluating the fit
+
+Let's predict admissions probabilities for the full range of GRE scores.
+
+```{r}
+## set up counterfactual scenarios
+sim_dat<-data.frame(gre_s = 
+                      seq(min(d$gre_s),
+                          max(d$gre_s),
+                          length.out = 500))
+## draw from posterior predictive distribution
+sim_dat <- sim_dat |> 
+  add_predicted_draws(m0)
+```
+
+## Posterior predictions
+
+```{r size = "tiny", fig.height = 3}
+ggplot(sim_dat,
+       aes(x = gre_s, y = .prediction)) + 
+  stat_lineribbon() + 
+  scale_fill_brewer() + 
+  labs(y = "Admission probability", x = "GRE score")
+```
+
+## One of the limits of the linear probability model
+
+```{r size = "tiny", fig.height = 3}
+ggplot(sim_dat,
+       aes(x = gre_s, y = .prediction)) + 
+  stat_lineribbon() + 
+  scale_fill_brewer() + 
+  geom_hline(yintercept = 0, lty = 2) + 
+  geom_hline(yintercept = 1, lty = 2) +
+  labs(y = "Admission probability", x = "GRE score")
+```
+
+## The Bernoulli distribution
+
+Binary outcomes can be described easily by the Bernoulli distribution
+
+$$y \sim Bernoulli(p)$$
+$$\Pr(y=1)=p=1-\Pr(y=0)$$
+$$E(y) = \bar{y} = p$$ 
+$$Var(y) = p(1-p)$$ 
+
+Bernoulli variables are a special case of the Binomial distribution, with $n=1$
+
+## What is E(admit) and var(admit)
+
+```{r}
+### E(y) = p = sum(y==1)/n
+mean(admissions$admit)
+### var(y) = p(1-p)
+var(admissions$admit)
+mean(admissions$admit) * (1 - mean(admissions$admit))
+```
+
+## Let's treat admission as a Bernoulli / Binomial random variable
+
+Because admission is a binary outcome, ["admitted", "not admitted"], a Bernoulli (equivalent to Binomial with n=1) model is the most appropriate. It is the distribution that satisfies the constraints of the data generating process, while also satisfying maximum entropy.
+
+$$\textrm{admit}_i \sim Binomial(n = 1, p_i)$$ \pause
+
+We'll use a linear predictor with link function $g$
+
+$$g(p_i) = \alpha + \beta \times \textrm{GRE}_i$$
+
+## Let's try a different approach
+
+This Binomial distribution has one unobserved parameter, $p$. The parameter $p$ is the probability of "success". So we need a link function that translates a continuous linear function onto a [0,1] probability space.
+
+The logit function is constrained to [0,1], and serves this job well. Along with log, the logit is a very common link function for GLMs.
+
+$$logit(p) = log \frac{p}{1-p} $$
+
+## The logit function
+
+To translate a $[0,1]$ probability to a continuous scale, we use the logit function: $logit(p) = log(\frac{p}{1-p})$
+
+```{r fig.height = 3, size = "tiny"}
+x<-seq(0.01, 0.99, 0.01)
+logit_x = log(x/(1-x))
+plot_dat<-data.frame(x = x, logit_x = logit_x)
+ggplot(plot_dat, aes(x = x, y = logit_x)) + 
+  geom_line()
+```
+
+## The inverse logit (logistic) function
+
+To translate the linear predictor $[-\infty, \infty]$ to the probability $[0,1]$ scale, we can use the inverse logit function (also called the logistic function)
+
+$$logit^{-1}(x) = \frac{1}{1 + exp(-x)}$$
+
+```{r fig.height = 3, size = "tiny"}
+x<-seq(-7.5, 7.5, 0.1)
+logistic_x<-1/(1 + exp(-x))
+plot_dat<-data.frame(x = x, logistic_x = logistic_x)
+ggplot(plot_dat, aes(x = x, y = logistic_x)) + 
+  geom_line()
+```
+
+## A generalized linear model 
+
+We use a logit link function to move back and forth between a linear (logit) scale, and a probability (outcome) scale. I'll use weakly informative priors.
+
+$$\textrm{admit}_i \sim Binomial(1, p_i)$$
+$$logit(p_i) = \alpha + \beta \times \textrm{GRE}$$
+$$\alpha \sim N(0, 2)$$
+$$\beta \sim N(0, 2)$$
+
+## Estimating the model 
+
+```{r, results = "hide"}
+priors <- c(set_prior("normal(0,2)", class = "Intercept"),
+            set_prior("normal(0,2)", class = "b"))
+
+m1 <- brm(admit~gre_s,
+          data = d,
+          prior = priors,
+          family = "bernoulli",
+          cores = 4)
+```
+
+## Logistic regression parameter estimates
+
+Remember that our linear predictor is now on the *logit* scale. This makes interpretation hard!
+
+```{r size = "scriptsize"}
+summary(m1)
+```
+
+$\alpha$ is now the *log-odds* of admission when GRE scores at the mean. $\beta$ is now the change in log-odds of admission when GRE scores increase by one SD. We can exponentiate these numbers to obtain the *odds*.
+
+Odds are defined as $\frac{p}{1-p}$. The value of a change in odds on the probability scale depends on the probability of the event!
+
+## Visualizing the impact of GRE scores
+
+**General advice for GLMs:** Avoid over-interpreting parameter estimates, they are now non-linear and multiplicative. Use the inverse-link functions to visualize relationships on the scale of the outcome (e.g. probability).
+
+## On the logit scale
+
+```{r echo = F}
+### define GRE scores over the range of observed
+sim_dat<-data.frame(gre_s = seq(
+  min(d$gre_s), max(d$gre_s), length.out = 500))
+
+sim_dat <- sim_dat |> 
+  add_linpred_draws(m1)
+
+ggplot(sim_dat, aes(x = gre_s,
+                    y = .linpred)) + 
+  stat_lineribbon() + 
+  scale_fill_brewer()
+```
+
+## On the probability scale
+
+```{r size = "tiny", fig.height = 3}
+### define GRE scores over the range of observed
+sim_dat<-data.frame(gre_s = seq(
+  min(d$gre_s), max(d$gre_s), length.out = 500))
+### epred applies the inverse link function 
+sim_dat <- sim_dat |> 
+  add_epred_draws(m1)
+
+ggplot(sim_dat, aes(x = gre_s,
+                    y = .epred)) + 
+  stat_lineribbon() + 
+  scale_fill_brewer()
+```
+
+## Extending the binomial model
+
+A logistic regression is a binomial regression with the special context that the parameter $n$ is fixed at 1. It estimates individual level event probabilities.
+
+Let's load different grad school admissions data from rethinking. We want to know whether female applicants are less likely to be admitted than male applicants.
+
+```{r}
+data("UCBadmit")
+d<-UCBadmit
+```
+
+## Count data
+
+```{r}
+head(d)
+```
+
+We don't have individual admission data. These are individual-level data, aggregated to the department level by applicant gender, counts of individual outcomes.
+
+## Translating counts into proportions
+
+```{r}
+d |> 
+  group_by(applicant.gender) |> 
+  summarise(admit_prop = sum(admit) / sum(applications))
+```
+
+## Defining a model
+
+The count of admissions in department $i$ will be modeled with two likelihood parameters: the number of applicants, $n$, and the probability of admission $p$. We will use a logit link to define a linear function for $p$ to include applicant gender as a predictor of admission rates. 
+
+$$admit_i \sim Binomial(n_i, p_i)$$
+$$logit(p_i) = \alpha_{gender[i]}$$
+$$\alpha \sim N(0, 1.5)$$
+
+On the logit scale, $N(0, 1.5)$ is a weakly informative prior centered on p = 0.5 with substantial variance.
+
+## Estimating the model
+
+```{r results = "hide"}
+d_slim <- d |> 
+  mutate(gender = (applicant.gender == "female") + 1) |> 
+  select(gender, admit, applications)
+
+priors <- c(set_prior("normal(0,1.5)", class = "b"))
+
+m2 <- brm(admit|trials(applications) ~ -1 + factor(gender),
+          data = d_slim,
+          family = "binomial",
+          prior = priors,
+          core = 4)
+```
+
+## Interpreting the model: probability
+
+```{r size = "tiny", fig.height = 3}
+sim_dat<-data.frame(gender = c(1, 2), applications = 1)
+sim_dat <- sim_dat |> 
+  add_epred_draws(m2)
+sim_dat<-sim_dat |> 
+  mutate(gender = ifelse(gender == 2, "female", "male"))
+ggplot(sim_dat, aes(x = gender, y = .epred)) + 
+  stat_pointinterval() + 
+  labs(y = "Admission probability")
+```
+
+## Interpreting the model: difference in probability
+
+```{r size = "tiny", fig.height = 3}
+pred_m <- sim_dat |> 
+  filter(gender=="male")
+pred_f <- sim_dat |> 
+  filter(gender=="female")
+# compute contrast
+plot_dat<-data.frame(diff = pred_m$.epred - pred_f$.epred)
+ggplot(plot_dat, aes(x = diff)) + 
+  stat_slabinterval()
+```
+
+## Perhaps selecting to apply to more competitive programs plays a role?
+
+$$admit_i \sim Binomial(n_i, p_i)$$
+$$logit(p_i) = \alpha_{gender[i]} + \delta_{program[i]}$$
+$$\alpha_{gender} \sim N(0, 1.5)$$
+$$\delta_{program} \sim N(0, 1.5)$$
+
+## Estimating the model
+
+```{r results = "hide", size = "tiny"}
+d_slim<-d |> 
+  mutate(gender = as.numeric(applicant.gender),
+         dept = as.numeric(dept)) |> 
+  select(gender, admit, applications, dept)
+
+m3 <- brm(admit | trials(applications) ~ -1 + factor(gender) + factor(dept),
+          family = "binomial",
+          prior = priors,
+          data = d_slim,
+          cores = 4)
+```
+
+## Model results
+
+```{r size = "tiny", fig.height = 3}
+summary(m3)
+```
+
+## Checking convergence
+
+```{r, echo = F}
+plot(m3, nvariables = 10)
+```
+
+
+## Visualizing the results
+
+```{r size = "tiny", fig.height = 3}
+sim_dat<-expand_grid(gender = unique(d_slim$gender),
+                     dept = unique(d_slim$dept),
+                     applications = 1)
+## add expected values
+sim_dat <- sim_dat |> 
+  add_epred_draws(m3)
+
+ggplot(sim_dat, aes(x = dept, color = factor(gender),
+                    y =.epred)) + 
+  stat_pointinterval(position = position_dodge(width=0.2))
+```
+
+## The Binomial count model
+
+When $n=1$, a Binomial regression model with a logit link function is called a logistic regression. When $n>1$, we are instead modeling counts of events as our outcome.
+
+The expected value for a Binomial variable with probability $p$ and number of trials $n$ is $np$, and the variance is $np(1-p)$. \pause
+
+When $n$ is large, and $p$ is small, $np \approx np(1-p)$. This special case of the Binomial distribution is the Poisson distribution.
+
+## Convergence
+
+```{r echo = F}
+p <- 0.001
+n <- 10000
+plot_dat <- data.frame(binom_sim = rbinom(10000, n, p),
+                       pois_sim = rpois(10000, p*n))
+p1 <- ggplot(plot_dat,
+       aes(x = binom_sim)) + 
+  geom_histogram(binwidth = 0.5)
+p2 <- ggplot(plot_dat,
+       aes(x = pois_sim)) + 
+  geom_histogram(binwidth = 0.5)
+p1+p2
+```
+
+
+## The Poisson likelihood
+
+Where y is a non-negative integer (count)
+
+$$y \sim Poisson (\lambda)$$
+$$E(y) = \bar{y} = \lambda$$
+$$Var(y)=\lambda $$
+
+## The Poisson likelihood
+
+```{r, echo = FALSE}
+p1<-rpois(10000, 1)
+p2<-rpois(10000, 2)
+p3<-rpois(10000, 3)
+p4<-rpois(10000, 4)
+p5<-rpois(10000, 5)
+p6<-rpois(10000, 6)
+p7<-rpois(10000, 7)
+p8<-rpois(10000, 8)
+p9<-rpois(10000, 9)
+
+pois_demo<-data.frame(count = c(p1, p2, p3, p4, p5, p6, p7, p8, p9), 
+                      lambda = rep(1:9, each = 10000))
+```
+
+```{r fig.height = 4}
+ggplot(pois_demo, aes(x=count)) + 
+  geom_histogram(binwidth = 0.5) + 
+  facet_wrap(~lambda)
+```
+
+## Let's look at each Poisson variable
+
+```{r size = "scriptsize"}
+pois_demo|>group_by(lambda)|>
+  
+  summarise(mean = mean(count),
+            variance = var(count))
+```
+
+## Poisson models as a GLM
+
+For a non-negative integer $y$
+
+$$y_i \sim Poisson(\lambda)$$
+$$\log\lambda_i = \alpha + \beta X$$
+
+## New data: Fatal Encounters
+
+Let's use data on police-involved killings to estimate how many men of different racial groups are killed by police in an average US county.
+
+```{r}
+fe<-read_csv("./fe_demo.csv")
+### on your computer, run fe<-read_csv("./slides/fe_demo.csv")
+head(fe)
+```
+
+## A mortality model using a Poisson likelihood
+
+Let's define a Poisson regression of county-level death rates $d$ for each racial group
+
+$$d_i \sim Poisson(\lambda_i)$$
+$$\log \lambda_i = \alpha[race]_i $$
+$$\alpha \sim Normal(0, 2)$$
+
+## Prior simulation
+
+```{r echo = T}
+plot_dat <- data.frame(alpha = rnorm(1000, 0, 2))
+## apply the inverse link function, e^\alpha = \lambda
+plot_dat <- plot_dat |> 
+  mutate(lambda = exp(alpha),
+         prior_pred = rpois(1000, lambda))
+head(plot_dat)
+```
+
+## Prior and prior predictive distributions
+
+```{r size = "tiny", fig.height = 3}
+p1 <- ggplot(plot_dat,
+       aes(x = lambda)) + 
+  geom_density() + 
+  coord_cartesian(xlim=c(0, 50))
+p2 <- ggplot(plot_dat,
+             aes(x = prior_pred)) + 
+  geom_density() + 
+  coord_cartesian(xlim=c(0,50))
+p1+p2
+```
+
+## Estimation
+
+```{r results = "hide"}
+# remove counties with zero reported pop for subgroups
+fe_model<-fe |> 
+  filter(pop>0)
+
+priors <- set_prior("normal(0,2)", class = "b")
+
+fe_pois <- brm(deaths ~ -1 + race.ethn,
+               data = fe_model,
+               family = "poisson",
+               prior = priors,
+               cores = 4)
+```
+
+## Check convergence
+
+```{r echo = F}
+plot(fe_pois)
+```
+
+## Log-scale parameters are hard to interpret...
+
+```{r size = "tiny"}
+summary(fe_pois)
+```
+
+## Expected deaths in an average county
+
+```{r size = "tiny", fig.height = 3}
+fe_pois_post <- as_draws_df(fe_pois)
+fe_pois_post <- fe_pois_post |> 
+  pivot_longer(cols = b_race.ethnblack:b_race.ethnwhite,
+               names_to = "race_ethn",
+               values_to = "log_lambda") 
+# inverse link function to get lambda on E(deaths) scale
+fe_pois_post<-fe_pois_post |> 
+  mutate(lambda = exp(log_lambda)) 
+
+ggplot(fe_pois_post,
+       aes(x = lambda, fill = race_ethn, color = race_ethn)) + 
+  geom_density(alpha = 0.5)
+```
+
+## Problem: these don't adjust for population size 
+
+The standard Poisson model is *unbounded*, and assumes each observation is drawn from a similar unit. However, we can use Poisson models to estimate event *rates* using an *offset*. \pause
+
+An offset (or exposure) scales $\lambda$ to the size of the exposure, turning $\lambda$ into a rate per unit of the offset.
+
+## Including an offset in the model
+
+Let's now estimate a model that includes population $p$ as an exposure variable (typically time, population, or some other measure of event opportunity). 
+
+$$d_i \sim Poisson(\lambda)$$
+$$\log\frac{\lambda_i}{p_i} = \log\lambda_i - \log p_i = \alpha + \beta x_i$$ \pause
+
+Which we can rewrite as
+
+$$\log \lambda_i =\alpha + \beta x_i + \log(p_i)$$
+
+We add the offset to the regression without including a parameter.
+
+## Let's re-estimate the model with an offset
+
+$$d_i \sim Poisson(\lambda)$$
+$$\log \lambda_i = \alpha[race]_i + \log p_i $$
+$$\alpha[race] \sim Normal(0, 2)$$
+
+```{r size = "tiny", results = "hide"}
+fe_pois2 <- brm(deaths ~ -1 + race.ethn + offset(log(pop)),
+               data = fe_model,
+               family = "poisson",
+               prior = priors,
+               cores = 4)
+```
+
+## Model output
+
+```{r size = "tiny"}
+summary(fe_pois2)
+```
+
+## Interpreting the model, checking convergence diagnostics
+
+```{r size = "tiny", echo = F}
+plot(fe_pois2)
+```
+
+## Posterior inference
+
+Let's check the expected number of deaths for each group assuming a population of 100,000. 
+
+```{r size = "tiny"}
+sim_dat<-data.frame(race.ethn = 
+                      c("black", "latino", "white"),
+                    pop = 1e5)
+
+sim_dat <- sim_dat |> 
+  add_epred_draws(fe_pois2)
+```
+
+## Posterior inference
+
+```{r size = "tiny", fig.height = 4}
+ggplot(sim_dat,
+       aes(x = .epred, y = race.ethn)) + 
+  stat_slabinterval()
+```
+
+## Posterior predictive check
+
+```{r, fig.height = 4}
+pp_check(fe_pois2, type = "rootogram")
+```
+
+## Categorical data
+
+Categorical data falls into a fixed set of categories. It may be \textit{unordered}, meaning that there is no inherent ranking of categories, or it may be \textit{ordered}. Ordered categorical data has an explicit hierarchical ranking of values. 
+
+## Categorical data, examples
+
+Are these variables ordered or unordered? \pause
+
+- Candidate choice in a primary election \pause
+- Zip code for people choosing a place to move \pause
+- Cause of death \pause
+- Opinions on a political issue on a thermometer / Likert scale (e.g. Strongly oppose, oppose, neutral, support, strongly support) \pause
+- Graduate program to attend \pause
+- Ranking of graduate program 
+
+## Visualizing categorical data, facets
+
+```{r size = "tiny", fig.height = 4}
+ggplot(iris, aes(x = Petal.Length)) + 
+  geom_histogram() + 
+  facet_wrap(~Species, ncol=1)
+```
+
+## Visualizing categorical data, color
+
+```{r size = "tiny", fig.height = 4}
+ggplot(iris, aes(x = Petal.Length, y = Petal.Width, 
+                 color = Species)) + 
+  geom_point() 
+```
+
+## Predicting Iris species from petal length and width
+
+Can we successfully classify Iris species based on the observed length of the petals?
+
+We will use a *multinomial regression*, which is conceptually similar to running $k-1$ logistic regressions, where $k$ is the number of categories in our outcome.
+
+## Multinomial regression: basics
+
+For a categorical outcome with $K$ categories, estimate $K - 1$ models where 1,2,3 stand in for membership in group 1, 2, 3:
+
+$$log \frac{Pr(y_i =1)}{Pr(y_i=K)} =  \beta x_i$$
+$$log \frac{Pr(y_i =2)}{Pr(y_i=K)} =  \beta x_i$$
+$$ \cdots$$
+$$log \frac{Pr(y_i =K-1)}{Pr(y_i=K)} =  \beta x_i$$
+
+## Implementation 
+
+```{r results = "hide"}
+iris_model<-brm(Species ~ Petal.Length,
+                family = categorical, 
+                data = iris,
+                cores = 4)
+```
+
+## These are hard to interpret...
+
+```{r size = "tiny"}
+summary(iris_model)
+```
+
+## But visualization is helpful
+
+```{r fig.height = 4}
+conditional_effects(iris_model, categorical = T)
+```
+
