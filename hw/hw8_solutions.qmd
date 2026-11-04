@@ -1,0 +1,115 @@
+---
+  title: "Advanced Stats. HW8"
+author: "Your Name Here!"
+format: pdf
+---
+
+Complete rethinking practice exercises: 7M1-7M6, 7H1, 7H2
+
+## 7M1
+
+AIC is equal to two times the number of parameters in the model $k$ - 2 times the negative log-likelihood of the model. It is a simple index of fit (log-likelihood) combined with a penalty for complexity.
+
+$$AIC = 2k-2ln(L)$$
+
+$$WAIC(y_i|\Theta) = -2(lppd - \sum var_\theta \log p(y_i|\theta)$$
+
+Where the AIC takes just the log likelihood of the model, the WAIC considers the log posterior predictive distribution, the variance of parameters, and the log likelihood. It's a bit more informative!
+
+## 7M2
+
+Model selection involves choosing a best model for a particular application. Model comparison involves explicitly weighing model fits against each other using some comparative statistics (WAIC, LOO-CV). Model selection ultimately discards information from the non-preferred models, while model comparison retains it. 
+
+## 7M3
+
+Information criteria aren't comparable across specifications or models fit to different data. The log-likelihood would be computed across either different likelihood functions or different observations, resulting in incomparable statistics.
+
+## 7M4
+
+It should decrease, as our prior is more informative, our model has less information that it needs to estimate in the posterior, fewer effective parameters.
+
+## 7M5
+
+Informative priors reduce the amount of information we are trying to learn from the model, it confines the search to narrower ranges of the parameter space. 
+Since we are searching over narrower ranges, more extreme results are ruled out a priori. 
+
+## 7H1
+
+```{r}
+data(Laffer)
+```
+
+Let's compare a linear fit, a quadratic fit, a cubic fit. We'll use pretty narrow priors to regularize. Let's also standardize the variables.
+
+```{r}
+Laffer <- Laffer |> 
+  mutate(tax_rate_s = scale(tax_rate),
+         tax_revenue_s = scale(tax_revenue),
+         tax_rate_s2 = tax_rate_s^2,
+         tax_rate_s3 = tax_rate_s^3)
+```
+
+Let's consider a narrow prior on the intercept, $\alpha \sim N(0, 0.5)$ and a modest prior for the slope and polynomial terms $\beta \sim N(0,1)$
+
+```{r}
+priors <- c(set_prior("normal(0,0.5)", class = "Intercept"),
+            set_prior("normal(0,1)", class = "b"),
+            set_prior("exponential(1)", class = "sigma"))
+
+m0 <- brm(tax_revenue_s ~ tax_rate_s,
+          data = Laffer,
+          prior = priors,
+          cores = 4)
+
+m1 <- brm(tax_revenue_s ~ tax_rate_s + tax_rate_s2,
+          data = Laffer,
+          prior = priors,
+          cores = 4)
+
+m2 <- brm(tax_revenue_s ~ tax_rate_s + tax_rate_s2 + tax_rate_s3,
+          data = Laffer,
+          prior = priors,
+          cores = 4)
+
+waic(m0, m1, m2)
+
+```
+
+This shows a preference for the quadratic model, but we've got some influential observations for sure. 
+
+## 7H2
+
+Let's check on that influential observation.
+
+```{r}
+t <- waic(m2, pointwise = T)
+t$pointwise
+```
+
+It's row 12 that's very influential.
+
+Let's try that t distribution regression instead.
+
+```{r}
+t0 <- brm(tax_revenue_s ~ tax_rate_s,
+          data = Laffer,
+          prior = priors,
+          cores = 4,
+          family = "student")
+
+t1 <- brm(tax_revenue_s ~ tax_rate_s + tax_rate_s2,
+          data = Laffer,
+          prior = priors,
+          cores = 4,
+          family = "student")
+
+t2 <- brm(tax_revenue_s ~ tax_rate_s + tax_rate_s2 + tax_rate_s3,
+          data = Laffer,
+          prior = priors,
+          cores = 4,
+          family = "student")
+
+waic(t0, t1, t2)
+```
+
+The student t likelihood rather than gaussian likelihood results in a less pronounced curve, regularizing things a bit. 
