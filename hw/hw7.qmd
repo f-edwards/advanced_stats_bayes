@@ -4,8 +4,117 @@ author: "Your Name Here!"
 format: pdf
 ---
 
+```{r include = F}
+library(tidyverse)
+library(brms)
+library(ggdag)
+library(rethinking)
+```
+
+
 Complete the following exercises in Rethinking
 
 6E1-6E4; 6M2, 6M3; 6H3-6H6 (6H7 optional, it's a helpful, but difficult challenge)
 
 Provide your homework as a rendered quarto document with all code included.
+
+## 6E1
+
+1. when conditioning on a collider
+2. when backdoor paths between an outcome and exposure are not closed
+3. when a mediator is inappropriately conditioned on
+
+## 6E2
+1. police violence and conditioning on the stop decision
+2. this is less common, as people tend to *over* adjust their models in social sciences
+3. also with policing; conditioning on a stop is a mediator between racism and use of force, obscures the total effect of racism on use of force
+
+## 6E3
+
+1. Fork x->y, z->y, $x \perp z | y$
+2. Pipe x->y->z, $x\perp z|y$
+3. Collider x->z, y->z, $x \perp z$, $x \not\perp z|y$ 
+4. Descendant depends on the structure, could be any of the above
+
+## 6E4
+
+A biased sample is implicitly conditioning on either the exposure, the outcome, or some feature associated with the exposure or the outcome. In effect, we are conditioning on a common effect of the treatment and exposure which will have similar effects to conditioning on a collider.
+
+## 6M2
+
+```{r}
+pdat <- data.frame(x=rnorm(1000, 0, 1)) |> 
+  mutate(z = rnorm(1000, x, 1),
+         y = rnorm(1000, z, 1))
+
+ggplot(pdat,
+       aes(x = x, y = z)) + 
+  geom_point()
+```
+
+Indeed x and z are correlated. 
+
+```{r}
+m1 <- brm(y ~ x,
+          data = pdat)
+m2 <- brm(y ~ x + z,
+          data = pdat)
+```
+
+We do indeed observe multicollinearity here. 
+
+```{r}
+m1
+m2
+```
+
+In model 1, there is a clear association between x and y, but in model 2, there appears to be none. All information about y that x contains passes through z, so once z is conditioned on, there is no additional information about y in the distribution of x. This is a classic pipe. The legs example assumes two observations with nearly identical information in the outcomes, this example is one with mediation rather than redundant information.
+
+## 6M3
+
+From top to bottom, left to right: 1) Z, 2) no conditioning, we can estimate both x->y and x->z->y without adjustment. Conditioning on Z would open a collider path with A. 3) No adjustment. Conditioning on Z would open a collider path. 4) Condition on A to close the backdoor path y<-z<-a<-x
+
+## 6H3
+
+Starting with the DAG (it's ugly, sorry!)
+
+```{r}
+foxdag <- dagify(avgfood ~ area,
+                 groupsize ~ avgfood,
+                 weight ~ groupsize + avgfood,
+                 exposure = "area",
+                 outcome = "weight")
+ggdag(foxdag) + theme_dag()
+
+```
+
+To identify the total causal effect of area on weight, we shouldn't condition on group size, because it is a descendant of area; larger areas -> bigger groups
+
+```{r}
+ggdag_adjustment_set(foxdag)
+```
+
+
+```{r}
+data(foxes)
+## scale variables
+foxes <- foxes |> 
+  mutate(avgfood_s = scale(avgfood),
+         area_s = scale(area),
+         weight_s = scale(weight))
+## priors
+# let's keep it weakly informative, on the z scale
+foxpriors <- c(set_prior("normal(0,2)", class = "b"),
+               set_prior("normal(0,1)", class = "Intercept"),
+               set_prior("exponential(1)", class = "sigma"))
+## fit model
+f1_prior <- brm(weight_s ~ area_s, 
+                data = foxes,
+                prior = foxpriors,
+                sample_prior = "only")
+## prior sim
+
+
+
+```
+

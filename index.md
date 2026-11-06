@@ -9,9 +9,9 @@ layout: default
 
 ## Quick links
 
-[Lecture slides](https://github.com/f-edwards/advanced_stat_bayes/tree/master/slides)
+[Lecture slides](https://github.com/f-edwards/advanced_stats_bayes/tree/main/slides)
 
-[Homework assignments](https://github.com/f-edwards/advanced_stat_bayes/tree/master/hw)
+[Homework assignments](https://github.com/f-edwards/advanced_stats_bayes/tree/main/hw)
 
 ## Prerequisites
 

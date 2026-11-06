@@ -62,7 +62,7 @@ $$R^2 = 1 - \frac{var(\textrm{residuals})}{var(\textrm{outcome})}$$
 
 ## $R^2$ in action
 
-```{r zize = "tiny"}
+```{r size = "tiny"}
 m1<-quap(alist(
   mpg ~ dnorm(mu, sigma),
   mu<-a + bW * wt,
@@ -712,7 +712,7 @@ dat <- data.frame(y, x, z)
 - Fit a linear model y~x with flat priors beta~dunif(-10000, 10000), sigma ~dunif(0, 1000), use only 100 iterations
 
 ```{r}
-m0 <- brm(y~ x + z, 
+m0 <- brm(y ~ x + z, 
           prior = c(set_prior("uniform(-10000, 10000)", class = "b"),
                     set_prior("uniform(0, 1000)", class = "sigma")),
           iter = 100,
@@ -756,6 +756,7 @@ Fit a linear model divorce ~ Marriage * MedianAgeMarriage * South * WaffleHouses
 
 ```{r}
 data("WaffleDivorce")
-mw <- brm(Divorce ~ Marriage * MedianAgeMarriage * South * I(WaffleHouses/Population), data = WaffleDivorce)
+mw <- brm(Divorce ~ Marriage + MedianAgeMarriage + South + I(WaffleHouses/Population), data = WaffleDivorce)
+
 ```
 
