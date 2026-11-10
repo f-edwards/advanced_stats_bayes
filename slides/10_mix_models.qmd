@@ -1,0 +1,612 @@
+---
+title: "Mixture models"
+author: "Frank Edwards"
+format: 
+  beamer:
+    theme: metropolis
+execute: 
+  echo: true
+knitr: 
+  opts_chunk:
+    warning: false
+    size: "tiny"
+    fig.align: "center"
+---
+
+```{r setup, include=FALSE}
+library(brms)
+library(rethinking)
+library(ggdag)
+library(gridExtra)
+library(tidyverse)
+library(patchwork)
+library(tidybayes)
+set.seed(1)
+
+knitr::opts_chunk$set(tidy = FALSE)
+theme_set(theme_bw())
+def.chunk.hook  <- knitr::knit_hooks$get("chunk")
+knitr::knit_hooks$set(chunk = function(x, options) {
+  x <- def.chunk.hook(x, options)
+  ifelse(options$size != "normalsize", paste0("\\", options$size,"\n\n", x, "\n\n \\normalsize"), x)
+})
+knitr::opts_chunk$set(warning=FALSE, message=FALSE, tidy = F, size = "small")
+```
+
+# Overdispersion
+
+## Admissions
+
+```{r size = "tiny"}
+data("UCBadmit")
+d<-UCBadmit
+d
+```
+
+## Recall our DAG
+
+```{r size = "tiny", fig.height = 4}
+dag0 <- dagify(admit~gender + dept,
+               dept ~ gender)
+ggdag(dag0) + theme_dag()
+```
+
+## Let's compare two approaches
+
+```{r size = "tiny", results = "hide"}
+# model without department
+m0 <- brm(admit | trials(applications) ~ applicant.gender,
+          data = d,
+          family = "binomial")
+# model with department
+m1 <- brm(admit | trials(applications) ~ applicant.gender + dept,
+          data = d,
+          family = "binomial")
+# df for prediction and visualization
+sim_dat <- expand_grid(dept = unique(d$dept),
+                       applicant.gender = unique(d$applicant.gender),
+                       applications = 1000) 
+sim_dat_m0 <- sim_dat |> 
+  add_predicted_draws(m0, value = "m0_pred") 
+sim_dat_m1 <- sim_dat |> 
+  add_predicted_draws(m1, value = "m1_pred") 
+```
+
+## Expected admissions for 1000 applicants
+
+```{r size = "tiny", fig.height = 4}
+p1 <- ggplot(sim_dat_m0, aes(x = m0_pred, fill = applicant.gender,
+                             y = dept)) + 
+  stat_slabinterval(alpha = 0.75)
+p2 <- ggplot(sim_dat_m1, aes(x = m1_pred, fill = applicant.gender,
+                             y = dept)) + 
+  stat_slabinterval(alpha = 0.75)
+
+p1+p2 + plot_layout(guides="collect")
+```
+
+## What does the parameter for 'department' do in the model?
+
+```{r size = "tiny"}
+posterior_interval(m1)
+```
+
+## What if each department had their own probability of admission?
+
+Our binomial regression works like this
+
+$$admit_i \sim \textrm{Binomial}(applications_i, p_i)$$
+$$\textrm{logit}(p_i) = \beta_0 + \beta_1 gender_i + \beta_2 dept_i$$
+\pause
+
+the logit of admission probability $p$ is a linear function of gender and department.
+
+\pause
+
+We know we underestimate the variability of the data when we exclude information on department.
+
+## Overdispersion
+
+Overdispersion occurs when there is more variability in the outcome than what is expected by the model. 
+
+## An alternative approach
+
+Perhaps we don't have information on department, but suspect that admission probabiliy *p* is likely to vary across units.
+
+Let's create an explicit probability model for $p$ to allow it to vary across units
+
+$$p \sim \textrm{Beta}(a, b)$$
+
+## The Beta distribution
+
+```{r echo = F}
+pdat <- data.frame(p = seq(0, 1, by = 0.0001))
+ggplot(pdat,
+       aes(x = p)) + 
+  stat_function(fun = dbeta, args = list(1,1), color = 1) + 
+  stat_function(fun = dbeta, args = list(2,1), color = 2) + 
+  stat_function(fun = dbeta, args = list(3,1), color = 3) + 
+  stat_function(fun = dbeta, args = list(5,1), color = 4) + 
+  stat_function(fun = dbeta, args = list(3,3), color = 5) +
+  stat_function(fun = dbeta, args = list(0.5,0.5), color = 6)+
+  annotate("text", label = "beta(1, 1)", x = 0.1, y = 5) +
+  annotate("text", label = "beta(2, 1)", color = 2, x = 0.1, y = 4.8) +
+  annotate("text", label = "beta(3, 1)", color = 3, x = 0.1, y = 4.6) +
+  annotate("text", label = "beta(1, 2)", color = 4, x = 0.1, y = 4.4) +
+  annotate("text", label = "beta(3, 3)", color = 5, x = 0.1, y = 4.2) + 
+  annotate("text", label = "beta(0.5, 0.5)", color = 6, x = 0.12, y = 4)
+```
+
+## Let's assume a different model
+
+A Beta Binomial model allows for heterogeneity in $p$, the probability of admission, across rows of the data. 
+
+$$p \sim \textrm{Beta}(\mu, \phi)$$
+$$y \sim \textrm{Binomial}(n,p)$$
+$$\textrm{logit}(\mu) = \beta_0+\beta_1gender$$
+Where $\phi$ is a parameter that adjusts for over-dispersion
+
+## Estimation
+
+```{r results = "hide", size = "tiny"}
+# priors for intercept, beta, and phi
+# phi is strictly non-negative
+priors <- c(set_prior("normal(0,1)", class = "Intercept"),
+            set_prior("normal(0,2)", class = "b"),
+            set_prior("exponential(1)", class = "phi"))
+
+m_admit <- brm(admit | trials(applications) ~ 
+                 applicant.gender, 
+               family = "beta_binomial",
+               data = d,
+               prior = priors,
+               cores = 4)
+```
+
+## Convergence
+
+```{r echo = F}
+plot(m_admit)
+```
+
+## Output
+
+```{r size = "tiny"}
+m_admit
+```
+
+## What the Beta mixture achieves. Remember: no department control!
+
+```{r echo = F}
+# df for prediction and visualization
+sim_dat <- expand_grid(dept = unique(d$dept),
+                       applicant.gender = unique(d$applicant.gender),
+                       applications = 1000) 
+sim_dat_m0 <- sim_dat |> 
+  add_predicted_draws(m0, value = "m0_pred") 
+sim_dat_m1 <- sim_dat |> 
+  add_predicted_draws(m1, value = "m_admit_pred") 
+
+p1 <- ggplot(sim_dat_m0, aes(x = m0_pred, fill = applicant.gender,
+                             y = dept)) + 
+  stat_slabinterval(alpha = 0.75)
+p2 <- ggplot(sim_dat_m1, aes(x = m_admit_pred, fill = applicant.gender,
+                             y = dept)) + 
+  stat_slabinterval(alpha = 0.75)
+
+p1+p2 + plot_layout(guides="collect")
+```
+
+# Overdispersion in count models
+
+## The Poisson model
+
+$$y \sim Poisson(\lambda)$$
+$$E(y) = \lambda$$
+$$Var(y) = \lambda$$
+
+## The Poisson distribution
+
+```{r, echo = FALSE}
+p1<-rpois(10000, 1)
+p2<-rpois(10000, 2)
+p3<-rpois(10000, 3)
+p4<-rpois(10000, 4)
+p5<-rpois(10000, 5)
+p6<-rpois(10000, 6)
+p7<-rpois(10000, 7)
+p8<-rpois(10000, 8)
+p9<-rpois(10000, 9)
+
+pois_demo<-data.frame(count = c(p1, p2, p3, p4, p5, p6, p7, p8, p9), 
+                      lambda = rep(1:9, each = 10000))
+```
+
+```{r fig.height = 4}
+ggplot(pois_demo, aes(x=count)) + 
+  geom_density(adjust = 1/4) + 
+  facet_wrap(~lambda)
+```
+
+## Overdispersion
+
+A variable is said to be *overdispersed* if the variance exceeds what is expected by the model. 
+
+A count is overdispersed if the variance exceeds the mean (Poisson) or the variance exceeds $np(1-p)$ (Binomial).
+
+## What overdispersion looks like in practice
+
+```{r size = "tiny"}
+### make total deaths and pop per county
+fe<-read_csv("./fe_demo.csv") |> 
+  group_by(fips, state) |> 
+  summarise(pop = sum(pop), 
+            deaths = sum(deaths)) |> 
+  mutate(mort_rt = deaths / pop * 1e5) # empirical crude mortality
+
+mean(fe$mort_rt)
+var(fe$mort_rt)
+```
+
+## Estimating an intercept-only offset Poisson model
+
+$$d_i \sim Poisson(\lambda)$$
+$$\log \lambda_i = \log p_i + \alpha $$
+$$\alpha \sim Normal(0, 2)$$
+
+```{r size = "tiny", results = "hide", cache = T}
+fe_0 <- brm(deaths ~ 1 + offset(log(pop)),
+            prior = set_prior("normal(0,2)", class = "Intercept"),
+            data = fe,
+            family = "poisson",
+            cores = 4)
+```
+
+## Let's compare model predictions to the observed data
+
+```{r echo = F}
+### compare the model to the observed
+sim_dat<-data.frame(pop = fe$pop, observed = fe$deaths) |> 
+  add_predicted_draws(fe_0, ndraws = 1) |> 
+  rename(pois = .prediction)
+
+pdat <- sim_dat |> 
+  pivot_longer(cols = c(observed, pois), names_to = "type", values_to = "d")
+ggplot(pdat,
+       aes(x = d, color = type, fill = type)) + 
+  geom_density(alpha = 0.2) +
+  scale_x_sqrt() + 
+  scale_y_sqrt()
+```
+
+## Overdispersion in practice
+
+- What if each county had a different expected mortality rate? \pause
+- Overdispersion results from mixed processes, when outcomes have more than one cause or are a sum or product of processes \pause
+- Most count variables are overdispersed \pause
+- Failing to adjust for overdispersion leads to over-confidence in posterior inference (intervals are too narrow) \pause
+- Generally safe to assume overdispersion
+
+## Addressing overdispersion
+
+- Mixture models gamma + Poisson (negative binomial) and beta + binomial (beta binomial) models handle this problem well \pause
+- Multilevel models with observation-level intercepts also flexibly model overdispersion
+
+
+## How it works: a mixture model
+
+Negative Binomial models treat the Poisson parameter $\lambda$ as a random variable
+
+$$y_i \sim \textrm{Poisson}(\lambda_i)$$
+$$\lambda_i \sim \textrm{Gamma}(\alpha, \theta)$$
+
+It allows *each* observation to have it's own rate $\lambda_i$
+
+## The Gamma distribution
+
+```{r echo = F}
+pdat <- data.frame(x = seq(0, 15, by = 0.001))
+ggplot(pdat,
+       aes(x = x)) + 
+  stat_function(fun = dgamma, args = list(shape = 1, rate = 1), color = 1) + 
+  stat_function(fun = dgamma, args = list(shape = 2, rate = 1), color = 2) + 
+  stat_function(fun = dgamma, args = list(shape = 5, rate = 1), color = 3) + 
+  stat_function(fun = dgamma, args = list(shape = 1, rate = 2), color = 4) + 
+  stat_function(fun = dgamma, args = list(shape = 3, rate = 3), color = 5) + 
+  annotate("text", label = "Gamma(1, 1)", x = 3, y = 0.6) + 
+  annotate("text", label = "Gamma(2, 1)", color = 2, x = 4, y = 0.4) + 
+  annotate("text", label = "Gamma(3, 1)", color = 3, x = 8, y = 0.25) +
+  annotate("text", label = "Gamma(1, 2)", color = 4, x = 2, y = 1.5) + 
+  annotate("text", label = "Gamma(3, 3)", color = 5, x = 2.5, y = 0.8) 
+```
+
+## A mixture model
+
+We could imagine estimating a model in two stages: 
+
+1. Estimate a Gamma regression for the event rate ($\lambda_i$) for each unit \pause
+2. Estimate a Poisson regression for the event count $y_i$, using the $\lambda_i$ parameter from step 1
+
+## Modeling overdispersion: the negative binomial model
+
+- To allow for unmeasured variables to influence counts, we can let each Poisson variable have it's own event rate \pause
+- We mix the Poisson and the gamma distributions to model the the rate (Gamma) and count (Poisson) of each observation \pause
+
+## Defining the Negative Binomial model
+
+- We add one extra parameter to the Poisson model: a dispersion parameter $\phi$ that allows for extra variance in counts, effectively allowing the event rate to vary across units
+
+$$y \sim \textrm{Negative Binomial}(\lambda, \phi)$$
+
+\pause
+
+Negative binomials can be parameterized in many different ways. 
+
+In `brms`, as $\phi \rightarrow \infty$ Negative binomial converges to Poisson (larger $\phi$ = less variance, smaller $\phi$ = more variance)
+
+## Re-estimating the police deaths model
+
+$$d_i \sim \textrm{Negative Binomial}(\lambda, \phi)$$
+$$\log \lambda_i = \log p_i + \alpha $$
+$$\alpha \sim Normal(0, 2)$$
+$$\phi \sim Exponential(1)$$
+
+```{r size = "tiny", results = "hide", cache = T}
+fe_NB0 <- brm(deaths ~ offset(log(pop)),
+              family = "negbinomial",
+              prior = c(set_prior("normal(0,10)", class = "Intercept"),
+                        set_prior("exponential(1)", class = "shape")),
+              data = fe,
+              cores = 4)
+```
+
+## Examining the posteriors: Poisson
+
+```{r echo = F}
+plot(fe_0)
+```
+
+## Examining the posteriors: Negative Binomial
+
+```{r echo = F}
+plot(fe_NB0)
+```
+
+## How Negative Binomial influences inference
+
+```{r echo = F}
+### compare the model to the observed
+sim_dat<-data.frame(pop = fe$pop, observed = fe$deaths) |> 
+  add_predicted_draws(fe_0, ndraws = 1) |> 
+  rename(pois = .prediction) |> 
+  select(pop, observed, pois) |> 
+  add_predicted_draws(fe_NB0, ndraws = 1) |> 
+  rename(negbin = .prediction)
+
+pdat <- sim_dat |> 
+  pivot_longer(cols = c(observed, pois, negbin), names_to = "type", values_to = "d")
+p1 <- ggplot(pdat |> 
+               filter(type!="negbin") |> 
+               mutate(type = factor(type, levels = c("observed", "pois"))),
+             aes(x = d, color = type, fill = type)) + 
+  geom_density(alpha = 0.2) +
+  scale_x_sqrt() + 
+  scale_y_sqrt()
+p2 <- ggplot(pdat |> 
+               filter(type!="pois") |> 
+               mutate(type = factor(type, levels = c("observed", "negbin"))),
+             aes(x = d, color = type, fill = type)) + 
+  geom_density(alpha = 0.2) +
+  scale_x_sqrt() + 
+  scale_y_sqrt()
+p1+p2
+```
+
+## Posterior inference: Poisson
+
+Recall that our Poisson model assumed
+
+$$y\sim \textrm{Poisson}(\lambda_i)$$
+$$\lambda_i = \beta_0 + \log p_i$$
+So what is $\lambda$? 
+
+```{r size = "tiny"}
+posterior_interval(fe_0, variable = "b_Intercept")
+```
+
+## The posterior for lambda
+
+```{r size = "tiny", fig.height = 4}
+post_pois <- as_draws_df(fe_0)
+ggplot(post_pois, aes(x = exp(b_Intercept) * 1e5)) + 
+  stat_slabinterval()
+```
+
+## Posterior inference: Negative Binomial
+
+Our Negative Binomial model says that each county now gets its own $\lambda$. But `brms` gives us this thing called `shape` $\phi$
+
+```{r}
+posterior_interval(fe_NB0, variable = c("b_Intercept", "shape"))
+```
+
+\pause
+
+There is an implied set of posterior Gamma distributions here, but we need to manipulate things a bit. 
+
+## Many lambdas
+
+```{r echo = F}
+as_draws_df(fe_NB0) |> 
+  mutate(alpha = shape,
+         theta = exp(b_Intercept) / shape) |>
+  slice_sample(n = 200) |> 
+  expand_grid(x = seq(0, 2.5e-04, by = 1e-06))|> 
+  mutate(density = dgamma(x, shape = alpha, scale = theta)) |> 
+  
+  # Plot
+  ggplot(aes(x = x, y = density)) +
+  geom_line(aes(group = .draw),
+            alpha = 0.1) +
+  scale_y_continuous(NULL, breaks = NULL) +
+  labs(x = expression(lambda),
+       subtitle = expression("200 credible gamma densities for "*lambda)) 
+```
+
+# Zero inflation
+
+## When there are more zeroes than your model expects
+
+- Sometimes multiple processes are at play in count models: 1) determines whether the event occurs at all, and if so 2) determines the count of events
+- If we are counting salamander populations in a forest, ordinary ecological variables like forest cover may predict population sizes. But another process, like pollutant exposure may determine whether there are any salamanders there at all.
+
+## The zero inflated model
+
+This model contains two components. 
+
+1. A model describing the probability that the outcome is zero
+2. A model describing the expected event count
+
+Remember, regular count models also produce zeroes! 
+
+## Possible zero inflated count outcomes
+
+- Number of snow days in a school district
+- Prison admissions in a county
+- Well-visits to a doctor per person
+
+## How many fish did you catch on the camping trip?
+
+I'm guessing that people who went camping along were more likely to go fishing. People in big groups and groups with kids were less likely to go fishing at all.
+
+```{r}
+zinb <- read.csv("https://stats.idre.ucla.edu/stat/data/fish.csv") |> 
+  select(persons, camper, child, count)
+head(zinb)
+```
+
+## Let's think about this
+
+The mean number of fish caught in the data is 3.3, let's simulate a Poisson(3.3)
+
+```{r fig.height = 3, size = "tiny"}
+sim_fish<-rpois(250,3.3)
+plot_dat<-data.frame(fish = c(sim_fish, zinb$count),
+                     kind = rep(c("sim", "real"), each = 250))
+ggplot(plot_dat, 
+       aes(x = fish)) + 
+  geom_histogram() + 
+  facet_wrap(~kind)
+```
+
+## Let's build our zero-inflated model
+
+We suggest that kids and other people get in the way of fishing. If you go fishing, more people (rods) likely means more fish. \pause
+
+- First, we will run a logistic regression to estimate the probability that each group went fishing at all.  
+- We add this probability of not going fishing to our Poisson estimated probability of catching nothing when people did go fishing.
+- Because these are separate linear models, we'll get different parameters
+
+## Two likelihoods one model
+
+$$fish_i \sim \textrm{Zero-inflated Negative Binomial}(p_i, \mu, \phi)$$
+
+$$\textrm{logit}(p_i) = \alpha_p + \beta_{1p} \times kids_i + \beta_{2p} \times persons_i$$
+
+$$\textrm{log}(\mu_i) = \alpha_\mu + \beta_{1\mu} \times persons_i$$
+
+## Estimation 
+
+We will use weakly informative priors on all parameters
+
+```{r results = "hide", cache = T, size = "tiny"}
+priors <- c(set_prior("normal(0,5)", class= "b"),
+            set_prior("normal(0,5)", class = "Intercept"),
+            set_prior("exponential(1)", class = "shape"))
+# bf is for complex brms formulas
+mfish <- brm(bf(count~ persons + child + camper,
+                zi~child),
+             data = zinb, 
+             prior = priors,
+               family = "zero_inflated_negbinomial")
+```
+
+## Check convergence
+
+```{r echo = F}
+plot(mfish, nvariables = 10)
+```
+
+## Model output
+
+```{r size = "tiny"}
+mfish
+```
+
+## So what is the probability of NOT going fishing
+
+Use the logit model for zeroes, campers with 1 child and no children
+
+$$E(\textrm{Didn't fish}) = \textrm{Logit}^{-1}(\beta_{z0} + \beta_{z1} children) $$
+```{r size = "tiny"}
+mfish_post <- as_draws_df(mfish)
+# inverse logit is 1/1(1+exp(-x)), or use logistic()
+mfish_post <- mfish_post |> 
+  mutate(e0Logit_nokids = logistic(b_zi_Intercept),
+         e0Logit_1kid =  logistic(b_zi_Intercept + b_zi_child))
+```
+
+## Visualize
+
+```{r echo = F} 
+ggplot(mfish_post,
+       aes(x = e0Logit_nokids)) + 
+  geom_density(fill = 2, alpha = 0.5) + 
+  geom_density(aes(x = e0Logit_1kid), fill = 3, alpha = 0.5) + 
+  labs(subtitle = "Probability of NOT fishing, red is 0 children in group, green is 1 child in group",
+       x = "Probability")
+```
+
+## Zeroes now have two sources
+
+The Logit component models the probability of fishing, and the Negative Binomial (log link) models the count of fish (which can be zero!)
+
+Let's pull apart the count component for the 1 and zero child groups again, now assuming 3 people in the group, and not in an RV (camper). 
+
+```{r size = "tiny"}
+mfish_post <- mfish_post |> 
+  mutate(eNegBin_nokids = exp(b_Intercept + b_persons * 3),
+         eNegBin_1kid =  exp(b_Intercept + b_child + b_persons * 3))
+```
+
+## Visualize the posteriors
+
+```{r}
+ggplot(mfish_post,
+       aes(x = eNegBin_nokids)) + 
+  geom_density(fill = 2, alpha = 0.5) + 
+  geom_density(aes(x = eNegBin_1kid), fill = 3, alpha = 0.5) + 
+  labs(subtitle = "Expected number of fish caught, no children (red) and 1 child (green)",
+       x = "Fish caught")
+```
+
+## Full model visualization: expected fish
+
+```{r size = "tiny", fig.height = 4}
+plotdat <- expand_grid(persons = 3, camper = 0, child = c(0,1)) |> 
+  add_epred_draws(mfish)
+ggplot(plotdat, aes(x = .epred, fill = factor(child))) + 
+  stat_slabinterval()
+```
+
+## Full model visualization: predicted fish
+
+```{r size = "tiny", fig.height = 4}
+plotdat <- expand_grid(persons = 3, camper = 0, child = c(0,1)) |> 
+  add_predicted_draws(mfish)
+ggplot(plotdat, aes(x = .prediction, fill = factor(child))) + 
+  stat_histinterval(alpha = 0.5, .width = 0) + 
+  scale_y_sqrt() + 
+  scale_x_sqrt()
+```
+

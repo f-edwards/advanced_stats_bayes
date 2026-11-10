@@ -1,0 +1,7 @@
+---
+title: "Advanced Stats HW10"
+author: "Frank Edwards"
+format: pdf
+---
+
+Answer Rethinking questions 12H1 - 12H4
